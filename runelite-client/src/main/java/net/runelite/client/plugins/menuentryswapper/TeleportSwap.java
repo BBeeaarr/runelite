@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Tomas Slusny <slusnucky@gmail.com>
+ * Copyright (c) 2024, Adam <Adam@sigterm.info>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,63 +22,42 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package net.runelite.client.plugins.grounditems;
+package net.runelite.client.plugins.menuentryswapper;
 
-import java.awt.Color;
-import java.time.Duration;
-import java.time.Instant;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import lombok.Builder;
-import lombok.Data;
-import net.runelite.api.coords.WorldPoint;
+import java.util.ArrayList;
+import java.util.List;
 
-@Data
-@Builder
-class GroundItem
+class TeleportSwap
 {
-	private int id;
-	private int itemId;
-	private String name;
-	private int quantity;
-	private WorldPoint location;
-	private int height;
-	private int haPrice;
-	private int gePrice;
-	private int offset;
-	private boolean tradeable;
-	@Nonnull
-	private LootType lootType;
-	@Nullable
-	private Instant spawnTime;
-	private boolean stackable;
-	private Duration despawnTime;
-	@Nullable
-	private Duration visibleTime;
+	boolean worn;
+	boolean held;
+	String option;
+	List<TeleportSub> subs = new ArrayList<>();
 
-	// cached values derived from config
-	boolean highlighted;
-	boolean hidden;
-	Color color;
-
-	int getHaPrice()
+	TeleportSwap addSub(String option, Runnable r)
 	{
-		return haPrice * quantity;
+		var sub = new TeleportSub();
+		sub.option = option;
+		sub.execute = r;
+		subs.add(sub);
+		return this;
 	}
 
-	int getGePrice()
+	TeleportSwap worn()
 	{
-		return gePrice * quantity;
+		worn = true;
+		return this;
 	}
 
-	boolean isMine()
+	TeleportSwap held()
 	{
-		return lootType != LootType.UNKNOWN;
+		held = true;
+		return this;
 	}
+}
 
-	void reset()
-	{
-		highlighted = hidden = false;
-		color = null;
-	}
+class TeleportSub
+{
+	String option;
+	Runnable execute;
 }

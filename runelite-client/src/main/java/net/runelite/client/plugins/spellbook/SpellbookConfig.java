@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Tomas Slusny <slusnucky@gmail.com>
+ * Copyright (c) 2024, Adam <Adam@sigterm.info>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,63 +22,13 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package net.runelite.client.plugins.grounditems;
+package net.runelite.client.plugins.spellbook;
 
-import java.awt.Color;
-import java.time.Duration;
-import java.time.Instant;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import lombok.Builder;
-import lombok.Data;
-import net.runelite.api.coords.WorldPoint;
+import net.runelite.client.config.Config;
+import net.runelite.client.config.ConfigGroup;
 
-@Data
-@Builder
-class GroundItem
+@ConfigGroup(SpellbookConfig.GROUP)
+public interface SpellbookConfig extends Config
 {
-	private int id;
-	private int itemId;
-	private String name;
-	private int quantity;
-	private WorldPoint location;
-	private int height;
-	private int haPrice;
-	private int gePrice;
-	private int offset;
-	private boolean tradeable;
-	@Nonnull
-	private LootType lootType;
-	@Nullable
-	private Instant spawnTime;
-	private boolean stackable;
-	private Duration despawnTime;
-	@Nullable
-	private Duration visibleTime;
-
-	// cached values derived from config
-	boolean highlighted;
-	boolean hidden;
-	Color color;
-
-	int getHaPrice()
-	{
-		return haPrice * quantity;
-	}
-
-	int getGePrice()
-	{
-		return gePrice * quantity;
-	}
-
-	boolean isMine()
-	{
-		return lootType != LootType.UNKNOWN;
-	}
-
-	void reset()
-	{
-		highlighted = hidden = false;
-		color = null;
-	}
+	String GROUP = "spellbook";
 }

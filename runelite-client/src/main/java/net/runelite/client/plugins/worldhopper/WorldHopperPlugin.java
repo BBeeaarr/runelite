@@ -918,7 +918,7 @@ public class WorldHopperPlugin extends Plugin
 
 	private int ping(World world)
 	{
-		int ping = Ping.ping(world);
+		int ping = Ping.ping(client, world);
 		storedPings.put(world.getId(), ping);
 		return ping;
 	}

@@ -29,6 +29,7 @@ import com.google.common.primitives.Bytes;
 import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -38,6 +39,7 @@ import java.net.UnknownHostException;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.util.OSType;
 import net.runelite.http.api.worlds.World;
+import net.runelite.api.Client;
 
 @Slf4j
 public class Ping
@@ -49,8 +51,23 @@ public class Ping
 
 	private static short seq;
 
-	public static int ping(World world)
+	public static int ping(Client client, World world)
 	{
+
+		if (client == null) {
+			System.err.println("client=null (not initialized)");
+			return -1;
+		}
+
+		FileDescriptor fd = client.getSocketFD();
+		int tcpRttMs = -1;
+		int tcpMinRttMs = -1;
+		TcpInfoV0 info = null;
+		if (fd != null) {
+			// Pull full TCP_INFO_v0 snapshot (add this method + return type in WindowsTcpInfoProbe)
+			info = WindowsTcpInfoProbe.tryGetTcpInfoV0(fd);
+		}
+
 		InetAddress inetAddress;
 		try
 		{
@@ -61,6 +78,20 @@ public class Ping
 			log.debug("error resolving host for world ping", ex);
 			return -1;
 		}
+
+		if (info != null)
+		{
+			tcpRttMs = (info.RttUs > 0) ? Math.max(1, info.RttUs / 1000) : -1;
+			tcpMinRttMs = (info.MinRttUs > 0) ? Math.max(1, info.MinRttUs / 1000) : -1;
+
+			int queueMs = 0;
+			if (info.RttUs > 0 && info.MinRttUs > 0)
+			{
+				queueMs = Math.max(0, (info.RttUs - info.MinRttUs) / 1000);
+			}
+
+		}
+
 
 		if (!(inetAddress instanceof Inet4Address))
 		{

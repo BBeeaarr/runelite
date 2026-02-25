@@ -57,6 +57,8 @@ import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.border.CompoundBorder;
+import javax.swing.JTable;
+import javax.swing.table.AbstractTableModel;
 import lombok.Getter;
 import net.runelite.api.Client;
 import net.runelite.api.IndexDataBase;
@@ -101,8 +103,163 @@ class VarInspector extends DevToolsFrame
 		BLACKLIST,
 		HIGHLIGHT
 	}
-	private enum EditMode { IDS, NAMES }
-	private EditMode editMode = EditMode.IDS;
+
+	private enum RuleKind
+	{
+		ID,
+		NAME
+	}
+
+	private static final class Rule
+	{
+		final VarType type;
+		final RuleKind kind;
+		final Integer id;      // if kind == ID
+		final String nameRule; // if kind == NAME
+
+		private Rule(VarType type, RuleKind kind, Integer id, String nameRule)
+		{
+			this.type = type;
+			this.kind = kind;
+			this.id = id;
+			this.nameRule = nameRule;
+		}
+
+		static Rule id(VarType type, int id)
+		{
+			return new Rule(type, RuleKind.ID, id, null);
+		}
+
+		static Rule name(VarType type, String rule)
+		{
+			return new Rule(type, RuleKind.NAME, null, rule);
+		}
+
+		@Override
+		public boolean equals(Object o)
+		{
+			if (!(o instanceof Rule))
+			{
+				return false;
+			}
+			Rule r = (Rule) o;
+			return type == r.type
+					&& kind == r.kind
+					&& Objects.equals(id, r.id)
+					&& Objects.equals(nameRule, r.nameRule);
+		}
+
+		@Override
+		public int hashCode()
+		{
+			return Objects.hash(type, kind, id, nameRule);
+		}
+	}
+
+	private final class RuleTableModel extends AbstractTableModel
+	{
+		private final ArrayList<Rule> rows = new ArrayList<>();
+
+		void setRules(Set<Rule> rules)
+		{
+			rows.clear();
+			rows.addAll(rules);
+
+			rows.sort((a, b) ->
+			{
+				int t = Integer.compare(a.type.ordinal(), b.type.ordinal());
+				if (t != 0)
+				{
+					return t;
+				}
+
+				int k = a.kind.compareTo(b.kind);
+				if (k != 0)
+				{
+					return k;
+				}
+
+				if (a.kind == RuleKind.ID)
+				{
+					return Integer.compare(a.id, b.id);
+				}
+
+				// NAME rules
+				return a.nameRule.compareToIgnoreCase(b.nameRule);
+			});
+
+			fireTableDataChanged();
+		}
+
+		Rule getRow(int row)
+		{
+			return rows.get(row);
+		}
+
+		@Override
+		public int getRowCount()
+		{
+			return rows.size();
+		}
+
+		@Override
+		public int getColumnCount()
+		{
+			return 3;
+		}
+
+		@Override
+		public String getColumnName(int col)
+		{
+			if (col == 0)
+			{
+				return "TYPE";
+			}
+			else if (col == 1)
+			{
+				return "NAME";
+			}
+			else if (col == 2)
+			{
+				return "ID";
+			}
+			return "";
+		}
+
+		@Override
+		public Object getValueAt(int rowIndex, int columnIndex)
+		{
+			Rule r = rows.get(rowIndex);
+
+			if (columnIndex == 0)
+			{
+				return r.type.getName();
+			}
+			else if (columnIndex == 1)
+			{
+				if (r.kind == RuleKind.NAME)
+				{
+					return r.nameRule;
+				}
+				// ID rule: show resolved constant name (if known)
+				return resolveName(r.type, r.id);
+			}
+			else if (columnIndex == 2)
+			{
+				if (r.kind == RuleKind.ID)
+				{
+					return r.id;
+				}
+				return "";
+			}
+
+			return "";
+		}
+	}
+	private static final String CFG_BLACKLIST_RULES = "varinspector_blacklist_rules";
+	private static final String CFG_HIGHLIGHT_RULES = "varinspector_highlight_rules";
+	private Set<Rule> blacklistRules;
+	private Set<Rule> highlightRules;
 
 	private static final int MAX_LOG_ENTRIES = 10_000;
 	private static final int VARBITS_ARCHIVE_ID = 14;
@@ -112,16 +269,19 @@ class VarInspector extends DevToolsFrame
 	private static final Map<Integer, String> VARP_NAMES = DevToolsPlugin.loadFieldNames(VarPlayerID.class);
 
 	private static final String CFG_GROUP = "devtools";
-	private static final String CFG_BLACKLIST = "varinspector_blacklist";
-	private static final String CFG_HIGHLIGHTS = "varinspector_highlights";
-	private static final String CFG_BLACKLIST_NAMES = "varinspector_blacklist_names";
-	private static final String CFG_HIGHLIGHTS_NAMES = "varinspector_highlights_names";
 	private final Client client;
 	private final ClientThread clientThread;
 	private final EventBus eventBus;
 	private final ConfigManager configManager;
 
 	private final JPanel tracker = new JPanel();
+	private final RuleTableModel ruleTableModel = new RuleTableModel();
+	private final JTable ruleTable = new JTable(ruleTableModel);
+
+	private final JComboBox<VarType> ruleTypeCombo = new JComboBox<>(VarType.values());
+	private final JComboBox<RuleKind> ruleKindCombo = new JComboBox<>(RuleKind.values());
+	private final JSpinner ruleIdSpinner = new JSpinner();
+	private final JTextField ruleNameField = new JTextField(12);
 
 	private int lastTick = 0;
 
@@ -132,23 +292,9 @@ class VarInspector extends DevToolsFrame
 	private Map<Integer, Object> varcs = null;
 
 	// --- Filtering/highlighting state (ScriptInspector pattern) ---
-	private Set<Long> blacklist;
-	private Set<Long> highlights;
-	private Set<String> blacklistNames;
-	private Set<String> highlightNames;
 
-	private final DefaultListModel<String> nameListModel = new DefaultListModel<>();
-	private final JList<String> nameList = new JList<>(nameListModel);
-
-	private final DefaultListModel<Long> listModel = new DefaultListModel<>();
-	private final JList<Long> jList = new JList<>(listModel);
 	private ListState state = ListState.BLACKLIST;
-
-	private final JComboBox<VarType> typeCombo = new JComboBox<>(VarType.values());
-	private final JSpinner idSpinner = new JSpinner();
 	private final JTextField filterField = new JTextField(16);
-	private final JTextField nameRuleField = new JTextField(12);
-	private JScrollPane editorScroll; // holds either jList or nameList
 
 
 	private static long key(VarType type, int id)
@@ -175,46 +321,46 @@ class VarInspector extends DevToolsFrame
 		return ((long) typeOrd << 32) | (id & 0xFFFFFFFFL);
 	}
 
-	private Set<Long> getSet()
-	{
-		return state == ListState.BLACKLIST ? blacklist : highlights;
-	}
+//	private Set<Long> getSet()
+//	{
+//		return state == ListState.BLACKLIST ? blacklist : highlights;
+//	}
 
-	private void refreshList()
-	{
-		listModel.clear();
-		for (Long k : getSet())
-		{
-			listModel.addElement(k);
-		}
-	}
+//	private void refreshList()
+//	{
+//		listModel.clear();
+//		for (Long k : getSet())
+//		{
+//			listModel.addElement(k);
+//		}
+//	}
 
 	private void changeState(ListState state)
 	{
 		this.state = state;
-		refreshEditorList();
+		refreshRuleTable();
 	}
 
-	private void addToSet()
-	{
-		VarType t = (VarType) typeCombo.getSelectedItem();
-		int id = (Integer) idSpinner.getValue();
-		getSet().add(key(t, id));
-		refreshEditorList();
-		idSpinner.setValue(0);
-	}
+//	private void addToSet()
+//	{
+//		VarType t = (VarType) typeCombo.getSelectedItem();
+//		int id = (Integer) idSpinner.getValue();
+//		getSet().add(key(t, id));
+//		refreshEditorList();
+//		idSpinner.setValue(0);
+//	}
 
-	private void removeSelectedFromSet()
-	{
-		int index = jList.getSelectedIndex();
-		if (index == -1)
-		{
-			return;
-		}
-		long k = listModel.get(index);
-		getSet().remove(k);
-		refreshEditorList();
-	}
+//	private void removeSelectedFromSet()
+//	{
+//		int index = jList.getSelectedIndex();
+//		if (index == -1)
+//		{
+//			return;
+//		}
+//		long k = listModel.get(index);
+//		getSet().remove(k);
+//		refreshEditorList();
+//	}
 
 	@Inject
 	VarInspector(Client client, ClientThread clientThread, EventBus eventBus, ConfigManager configManager)
@@ -279,14 +425,11 @@ class VarInspector extends DevToolsFrame
 
 		add(trackerOpts, BorderLayout.SOUTH);
 
-		// --- Load persisted blacklist/highlights (ScriptInspector pattern) ---
-		blacklist = loadKeySet(CFG_BLACKLIST);
-		highlights = loadKeySet(CFG_HIGHLIGHTS);
+		// --- Load persisted rule sets ---
+		blacklistRules = loadRuleSet(CFG_BLACKLIST_RULES);
+		highlightRules = loadRuleSet(CFG_HIGHLIGHT_RULES);
 
-		blacklistNames = loadStringSet(CFG_BLACKLIST_NAMES);
-		highlightNames = loadStringSet(CFG_HIGHLIGHTS_NAMES);
-
-		// --- Right side: list editor (Blacklist / Highlights) ---
+		// --- Right side: rule editor (Blacklist / Highlights) ---
 		final JPanel rightSide = new JPanel(new BorderLayout());
 
 		final JButton blacklistButton = new JButton("Blacklist");
@@ -295,63 +438,47 @@ class VarInspector extends DevToolsFrame
 		final JButton highlightsButton = new JButton("Highlights");
 		highlightsButton.addActionListener(e -> changeState(ListState.HIGHLIGHT));
 
-		final JButton idsButton = new JButton("IDs");
-		idsButton.addActionListener(e -> changeEditMode(EditMode.IDS));
-
-		final JButton namesButton = new JButton("Names");
-		namesButton.addActionListener(e -> changeEditMode(EditMode.NAMES));
-
 		final JPanel topRow = new JPanel(new FlowLayout());
 		topRow.add(blacklistButton);
 		topRow.add(highlightsButton);
-		topRow.add(idsButton);
-		topRow.add(namesButton);
 
 		rightSide.add(topRow, BorderLayout.NORTH);
 
-		nameList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		nameList.setCellRenderer((list, value, index, isSelected, cellHasFocus) ->
-		{
-			JLabel lbl = new JLabel(value);
-			lbl.setOpaque(true);
-			lbl.setBackground(isSelected ? ColorScheme.DARKER_GRAY_COLOR : list.getBackground());
-			return lbl;
-		});
+		// Table in center
+		ruleTable.setFillsViewportHeight(true);
+		rightSide.add(new JScrollPane(ruleTable), BorderLayout.CENTER);
 
-//		rightSide.add(new JScrollPane(jList), BorderLayout.CENTER);
-
-		Component mySpinnerEditor = idSpinner.getEditor();
+		// Bottom row: Add / Remove + typed inputs
+		Component mySpinnerEditor = ruleIdSpinner.getEditor();
 		JFormattedTextField textField = ((JSpinner.DefaultEditor) mySpinnerEditor).getTextField();
 		textField.setColumns(6);
 
-		final JPanel bottomRow = new JPanel(new FlowLayout());
+		ruleNameField.setToolTipText("Name rule. Examples: TROLL_, ^TROLL_, $ACTIVE");
 
 		final JButton addButton = new JButton("Add");
-		addButton.addActionListener(e -> addToEditor());
+		addButton.addActionListener(e -> addRuleFromInputs());
 
 		final JButton removeButton = new JButton("Remove");
-		removeButton.addActionListener(e -> removeSelectedFromEditor());
+		removeButton.addActionListener(e -> removeSelectedRule());
 
-		nameRuleField.setToolTipText("Name rule. Examples: TROLL_, ^TROLL_, $ACTIVE");
-
+		final JPanel bottomRow = new JPanel(new FlowLayout());
 		bottomRow.add(addButton);
-		bottomRow.add(typeCombo);
-		bottomRow.add(idSpinner);
-		bottomRow.add(nameRuleField);
+		bottomRow.add(ruleTypeCombo);
+		bottomRow.add(ruleKindCombo);
+		bottomRow.add(ruleIdSpinner);
+		bottomRow.add(ruleNameField);
 		bottomRow.add(removeButton);
 
 		rightSide.add(bottomRow, BorderLayout.SOUTH);
 
-		editorScroll = new JScrollPane();
-		rightSide.add(editorScroll, BorderLayout.CENTER);
-
-		changeState(ListState.BLACKLIST);
 		add(rightSide, BorderLayout.EAST);
 
-		// Initialize editor UI
-		applyEditorVisibility();
-		refreshEditorList();
-		updateListViewport();
+		// Wire visibility switching for ID vs NAME input
+		ruleKindCombo.addActionListener(e -> applyRuleInputVisibility());
+		applyRuleInputVisibility();
+
+		// Initial table fill for BLACKLIST
+		changeState(ListState.BLACKLIST); // should call refreshRuleTable()
 
 		pack();
 	}
@@ -394,13 +521,13 @@ class VarInspector extends DevToolsFrame
 
 		long k = key(type, id);
 
-		// Blacklist by ID OR by name rule
-		if (blacklist.contains(k) || matchesAnyNameRule(blacklistNames, name))
+		// Unified rule-based matching
+		if (matches(blacklistRules, type, id, name))
 		{
 			return;
 		}
 
-		final boolean highlight = highlights.contains(k) || matchesAnyNameRule(highlightNames, name);
+		final boolean highlight = matches(highlightRules, type, id, name);
 
 		int tick = client.getTickCount();
 		SwingUtilities.invokeLater(() ->
@@ -560,11 +687,9 @@ class VarInspector extends DevToolsFrame
 	@Override
 	public void close()
 	{
-		// Persist sets (ScriptInspector pattern)
-		saveKeySet(CFG_HIGHLIGHTS, highlights);
-		saveKeySet(CFG_BLACKLIST, blacklist);
-		saveStringSet(CFG_BLACKLIST_NAMES, blacklistNames);
-		saveStringSet(CFG_HIGHLIGHTS_NAMES, highlightNames);
+		// Persist unified rule sets
+		saveRuleSet(CFG_BLACKLIST_RULES, blacklistRules);
+		saveRuleSet(CFG_HIGHLIGHT_RULES, highlightRules);
 
 		super.close();
 		tracker.removeAll();
@@ -573,122 +698,26 @@ class VarInspector extends DevToolsFrame
 		varbits = null;
 	}
 
-	private Set<String> loadStringSet(String keyName)
-	{
-		String cfg = configManager.getConfiguration(CFG_GROUP, keyName);
-		if (cfg == null)
-		{
-			cfg = "";
-		}
-
-		// CSV returns List<String>
-		return new HashSet<>(Text.fromCSV(cfg));
-	}
+//	private Set<String> loadStringSet(String keyName)
+//	{
+//		String cfg = configManager.getConfiguration(CFG_GROUP, keyName);
+//		if (cfg == null)
+//		{
+//			cfg = "";
+//		}
+//
+//		// CSV returns List<String>
+//		return new HashSet<>(Text.fromCSV(cfg));
+//	}
 
 	private void saveStringSet(String keyName, Set<String> set)
 	{
 		configManager.setConfiguration(CFG_GROUP, keyName, Text.toCSV(new ArrayList<>(set)));
 	}
 
-	private void changeEditMode(EditMode mode)
+	private static boolean matchesRule(String rule, String displayName)
 	{
-		this.editMode = mode;
-		refreshEditorList();
-		applyEditorVisibility();
-		updateListViewport();
-	}
-
-	private void refreshEditorList()
-	{
-		if (editMode == EditMode.IDS)
-		{
-			refreshList();
-		}
-		else
-		{
-			nameListModel.clear();
-			Set<String> s = (state == ListState.BLACKLIST) ? blacklistNames : highlightNames;
-			for (String v : s)
-			{
-				nameListModel.addElement(v);
-			}
-		}
-	}
-
-	private void updateListViewport()
-	{
-		if (editorScroll == null)
-		{
-			return;
-		}
-
-		if (editMode == EditMode.IDS)
-		{
-			editorScroll.setViewportView(jList);
-		}
-		else
-		{
-			editorScroll.setViewportView(nameList);
-		}
-	}
-
-	private void applyEditorVisibility()
-	{
-		boolean ids = editMode == EditMode.IDS;
-		typeCombo.setVisible(ids);
-		idSpinner.setVisible(ids);
-
-		nameRuleField.setVisible(!ids);
-	}
-
-	private void addToEditor()
-	{
-		if (editMode == EditMode.IDS)
-		{
-			addToSet();
-			return;
-		}
-
-		String rule = nameRuleField.getText();
-		if (rule == null)
-		{
-			return;
-		}
-		rule = rule.trim();
-		if (rule.isEmpty())
-		{
-			return;
-		}
-
-		Set<String> s = (state == ListState.BLACKLIST) ? blacklistNames : highlightNames;
-		s.add(rule);
-		nameRuleField.setText("");
-		refreshEditorList();
-	}
-
-	private void removeSelectedFromEditor()
-	{
-		if (editMode == EditMode.IDS)
-		{
-			removeSelectedFromSet();
-			return;
-		}
-
-		int index = nameList.getSelectedIndex();
-		if (index == -1)
-		{
-			return;
-		}
-
-		String rule = nameListModel.get(index);
-		Set<String> s = (state == ListState.BLACKLIST) ? blacklistNames : highlightNames;
-		s.remove(rule);
-		refreshEditorList();
-	}
-
-	private static boolean matchesRule(String rule, String nameLower)
-	{
-		if (rule == null)
+		if (rule == null || displayName == null)
 		{
 			return false;
 		}
@@ -699,15 +728,21 @@ class VarInspector extends DevToolsFrame
 			return false;
 		}
 
+		String nameLower = displayName.toLowerCase();
+
+		// Prefix match: ^FOO
 		if (r.charAt(0) == '^')
 		{
 			return nameLower.startsWith(r.substring(1));
 		}
+
+		// Suffix match: $FOO
 		if (r.charAt(0) == '$')
 		{
 			return nameLower.endsWith(r.substring(1));
 		}
 
+		// Default: substring match
 		return nameLower.contains(r);
 	}
 
@@ -729,4 +764,170 @@ class VarInspector extends DevToolsFrame
 		return false;
 	}
 
+	private boolean matches(Set<Rule> rules, VarType type, int id, String displayName)
+	{
+		if (rules == null || rules.isEmpty())
+		{
+			return false;
+		}
+
+		for (Rule r : rules)
+		{
+			// Must match type first
+			if (r.type != type)
+			{
+				continue;
+			}
+
+			// Match by ID
+			if (r.kind == RuleKind.ID)
+			{
+				if (r.id != null && r.id == id)
+				{
+					return true;
+				}
+			}
+			// Match by NAME rule
+			else if (r.kind == RuleKind.NAME)
+			{
+				if (matchesRule(r.nameRule, displayName))
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	private Set<Rule> activeRuleSet()
+	{
+		return state == ListState.BLACKLIST ? blacklistRules : highlightRules;
+	}
+
+	private static String encodeRule(Rule r)
+	{
+		if (r.kind == RuleKind.ID)
+		{
+			return "I:" + r.type.ordinal() + ":" + r.id;
+		}
+		return "N:" + r.type.ordinal() + ":" + r.nameRule;
+	}
+
+	private static Rule decodeRule(String s)
+	{
+		String[] parts = s.split(":", 3);
+		if (parts.length != 3)
+		{
+			throw new IllegalArgumentException("bad rule: " + s);
+		}
+
+		RuleKind kind = parts[0].equals("I") ? RuleKind.ID : RuleKind.NAME;
+		int typeOrd = Integer.parseInt(parts[1]);
+		VarType type = VarType.values()[typeOrd];
+
+		if (kind == RuleKind.ID)
+		{
+			return Rule.id(type, Integer.parseInt(parts[2]));
+		}
+
+		return Rule.name(type, parts[2]);
+	}
+
+	private Set<Rule> loadRuleSet(String keyName)
+	{
+		String cfg = configManager.getConfiguration(CFG_GROUP, keyName);
+		if (cfg == null)
+		{
+			cfg = "";
+		}
+
+		try
+		{
+			return new HashSet<>(Lists.transform(Text.fromCSV(cfg), VarInspector::decodeRule));
+		}
+		catch (Exception e)
+		{
+			return new HashSet<>();
+		}
+	}
+
+	private void saveRuleSet(String keyName, Set<Rule> set)
+	{
+		configManager.setConfiguration(CFG_GROUP, keyName,
+				Text.toCSV(Lists.transform(new ArrayList<>(set), VarInspector::encodeRule)));
+	}
+
+	private static String resolveName(VarType type, int id)
+	{
+		if (type == VarType.VARBIT)
+		{
+			return VARBIT_NAMES.getOrDefault(id, "");
+		}
+		else if (type == VarType.VARP)
+		{
+			return VARP_NAMES.getOrDefault(id, "");
+		}
+		else
+		{
+			// VARCINT and VARCSTR share VARC_NAMES
+			return VARC_NAMES.getOrDefault(id, "");
+		}
+	}
+
+	private void applyRuleInputVisibility()
+	{
+		boolean byId = ruleKindCombo.getSelectedItem() == RuleKind.ID;
+		ruleIdSpinner.setVisible(byId);
+		ruleNameField.setVisible(!byId);
+	}
+
+	private void refreshRuleTable()
+	{
+		ruleTableModel.setRules(activeRuleSet());
+	}
+
+	private void addRuleFromInputs()
+	{
+		VarType t = (VarType) ruleTypeCombo.getSelectedItem();
+		RuleKind k = (RuleKind) ruleKindCombo.getSelectedItem();
+
+		if (k == RuleKind.ID)
+		{
+			int id = (Integer) ruleIdSpinner.getValue();
+			activeRuleSet().add(Rule.id(t, id));
+		}
+		else
+		{
+			String s = ruleNameField.getText();
+			if (s == null)
+			{
+				return;
+			}
+
+			s = s.trim();
+			if (s.isEmpty())
+			{
+				return;
+			}
+
+			activeRuleSet().add(Rule.name(t, s));
+			ruleNameField.setText("");
+		}
+
+		refreshRuleTable();
+	}
+
+	private void removeSelectedRule()
+	{
+		int row = ruleTable.getSelectedRow();
+		if (row == -1)
+		{
+			return;
+		}
+
+		Rule r = ruleTableModel.getRow(row);
+		activeRuleSet().remove(r);
+		refreshRuleTable();
+	}
 }

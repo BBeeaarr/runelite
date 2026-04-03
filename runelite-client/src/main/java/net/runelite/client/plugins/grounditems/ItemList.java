@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Tomas Slusny <slusnucky@gmail.com>
+ * Copyright (c) 2026, Adam <Adam@sigterm.info>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,45 +24,51 @@
  */
 package net.runelite.client.plugins.grounditems;
 
-import com.google.common.base.Strings;
-import com.google.common.cache.CacheLoader;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
-import javax.annotation.Nonnull;
+import lombok.Value;
 import net.runelite.client.util.WildcardMatcher;
 
-class WildcardMatchLoader extends CacheLoader<NamedQuantity, Boolean>
+@Value
+class ItemList
 {
-	private final List<ItemThreshold> itemThresholds;
+	static final int NONE = 0;
+	static final int WILDCARD = 1;
+	static final int EXACT = 2;
 
-	WildcardMatchLoader(List<String> configEntries)
+	List<ItemThreshold> items;
+
+	ItemList(List<String> items)
 	{
-		this.itemThresholds = configEntries.stream()
-			.map(ItemThreshold::fromConfigEntry)
+		this.items = items.stream()
+			.map(ItemThreshold::fromName)
 			.filter(Objects::nonNull)
 			.collect(Collectors.toList());
 	}
 
-	@Override
-	public Boolean load(@Nonnull final NamedQuantity key)
+	int matches(GroundItem item)
 	{
-		if (Strings.isNullOrEmpty(key.getName()))
+		for (ItemThreshold it : items)
 		{
-			return false;
-		}
-
-		final String filteredName = key.getName().trim();
-
-		for (final ItemThreshold entry : itemThresholds)
-		{
-			if (WildcardMatcher.matches(entry.getItemName(), filteredName)
-				&& entry.quantityHolds(key.getQuantity()))
+			if (!it.isWildcard()
+				&& it.getName().equalsIgnoreCase(item.getName())
+				&& it.quantityHolds(item.getQuantity()))
 			{
-				return true;
+				return EXACT;
 			}
 		}
 
-		return false;
+		for (ItemThreshold it : items)
+		{
+			if (it.isWildcard()
+				&& WildcardMatcher.matches(it.getName(), item.getName())
+				&& it.quantityHolds(item.getQuantity()))
+			{
+				return WILDCARD;
+			}
+		}
+
+		return NONE;
 	}
 }

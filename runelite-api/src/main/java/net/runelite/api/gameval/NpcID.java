@@ -27853,6 +27853,10 @@ public final class NpcID
 	 * Mark
 	 */
 	public static final int ROOFTOPS_GRACE_DOG = 5920;
+
+	/**
+	 * BigRedJapan
+	 */
 	public static final int ROOFTOPS_BIGREDJAPAN = 5921;
 
 	/**
@@ -67714,45 +67718,65 @@ public final class NpcID
 	public static final int SAILING_TIGER_SHARK_NOOP = 15575;
 
 	/**
-	 * Gary
+	 * Veiled kraken
 	 */
-	public static final int _25TH_HOST_MODEL = 15576;
+	public static final int SAILING_VEILED_KRAKEN = 15576;
 
 	/**
-	 * Gary
+	 * Veiled kraken
 	 */
-	public static final int _25TH_HOST_HATLESS = 15577;
+	public static final int SAILING_VEILED_KRAKEN_DEAD = 15577;
 
 	/**
-	 * Wizard Gary
+	 * Easter Bunny
 	 */
-	public static final int _25TH_HOST_UPGRADED = 15578;
+	public static final int EASTER26_EASTER_BUNNY = 15578;
+	public static final int EASTER26_EGG_LAST_SPOT = 15579;
 
 	/**
-	 * Gary
+	 * Archibald
 	 */
-	public static final int _25TH_HOST_FOLLOWER = 15579;
-	public static final int _25TH_HOST_OUTSIDE = 15580;
-	public static final int _25TH_HAT_OUTSIDE = 15581;
+	public static final int EASTER26_EGG_LAST_SPOT_FOUND = 15580;
 
 	/**
-	 * &#60;col=00ffff&#62;Gary's hat&#60;/col&#62;
+	 * Archibald
 	 */
-	public static final int _25TH_HAT_MODEL = 15582;
-	public static final int _25TH_HOST_INSIDE = 15583;
-	public static final int _25TH_HOST_REALM = 15584;
-	public static final int _25TH_GRAYZAG = 15585;
-	public static final int _25TH_PORTAL_MULTI = 15586;
+	public static final int EASTER26_EGG_CHURCH_CUTSCENE = 15581;
 
 	/**
-	 * &#60;col=00ffff&#62;Portal&#60;/col&#62;
+	 * Barricade
 	 */
-	public static final int _25TH_PORTAL_MODEL = 15587;
+	public static final int CASTLEWARS_BARRICADE_SARADOMIN_RENDER_UNDER = 15582;
 
 	/**
-	 * Thief
+	 * Barricade
 	 */
-	public static final int _25TH_THIEF = 15588;
+	public static final int CASTLEWARS_BARRICADE_BURNING_SARADOMIN_RENDER_UNDER = 15583;
+
+	/**
+	 * Barricade
+	 */
+	public static final int CASTLEWARS_BARRICADE_ZAMORAK_RENDER_UNDER = 15584;
+
+	/**
+	 * Barricade
+	 */
+	public static final int CASTLEWARS_BARRICADE_BURNING_ZAMORAK_RENDER_UNDER = 15585;
+
+	/**
+	 * Archibald
+	 */
+	public static final int POH_EASTER26_EGG = 15586;
+
+	/**
+	 * Archibald
+	 */
+	public static final int DAGANNOTH_DUNGEON_PRESSURE_PET_EASTER26_EGG = 15587;
+
+	/**
+	 * Archibald
+	 */
+	public static final int POH_EASTER26_EGG_02 = 15588;
 
 	/**
 	 * Sookie
@@ -67760,174 +67784,84 @@ public final class NpcID
 	public static final int _25TH_CAT = 15589;
 
 	/**
-	 * Gnome Child
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_GNOMECHILD = 15590;
+	public static final int DAGANNOTH_DUNGEON_PRESSURE_PET_EASTER26_EGG_02 = 15590;
 
 	/**
-	 * Thrander
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_THRANDER = 15591;
+	public static final int POH_EASTER26_EGG_03 = 15591;
 
 	/**
-	 * Chuck
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_CHUCK = 15592;
+	public static final int DAGANNOTH_DUNGEON_PRESSURE_PET_EASTER26_EGG_03 = 15592;
 
 	/**
-	 * Pious Pete
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_PIOUSPETE = 15593;
+	public static final int POH_EASTER26_EGG_04 = 15593;
 
 	/**
-	 * Mysterious Watcher
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_SARADOMIN = 15594;
+	public static final int DAGANNOTH_DUNGEON_PRESSURE_PET_EASTER26_EGG_04 = 15594;
 
 	/**
-	 * Mysterious Watcher
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_GUTHIX = 15595;
+	public static final int POH_EASTER26_EGG_05 = 15595;
 
 	/**
-	 * Mysterious Watcher
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_ZAMORAK = 15596;
+	public static final int DAGANNOTH_DUNGEON_PRESSURE_PET_EASTER26_EGG_05 = 15596;
 
 	/**
-	 * Big Mo
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_BIGMO = 15597;
+	public static final int POH_EASTER26_EGG_06 = 15597;
 
 	/**
-	 * Cheerleader
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_CHEERLEADER_1 = 15598;
+	public static final int DAGANNOTH_DUNGEON_PRESSURE_PET_EASTER26_EGG_06 = 15598;
 
 	/**
-	 * Cheerleader
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_CHEERLEADER_2 = 15599;
+	public static final int POH_EASTER26_EGG_07 = 15599;
 
 	/**
-	 * Cheerleader
+	 * Archibald
 	 */
-	public static final int _25TH_ANNIVERSARY_CHEERLEADER_3 = 15600;
+	public static final int DAGANNOTH_DUNGEON_PRESSURE_PET_EASTER26_EGG_07 = 15600;
 
 	/**
-	 * Black dragon
+	 * Kaiquir
 	 */
-	public static final int _25TH_ANNIVERSARY_DRAGON_BLACK = 15601;
+	public static final int CANOEING_KAIQUIR = 15601;
 
 	/**
-	 * Red dragon
+	 * Amergin
 	 */
-	public static final int _25TH_ANNIVERSARY_DRAGON_RED = 15602;
+	public static final int CANOEING_AMERGIN = 15602;
 
 	/**
-	 * Blue dragon
+	 * Pete
 	 */
-	public static final int _25TH_ANNIVERSARY_DRAGON_BLUE = 15603;
+	public static final int CANOEING_PETE = 15603;
 
 	/**
-	 * King black dragon
+	 * Porkai
 	 */
-	public static final int _25TH_ANNIVERSARY_DRAGON_KING = 15604;
+	public static final int CANOEING_PORKAI = 15604;
 
 	/**
-	 * Baby blue dragon
+	 * Lara
 	 */
-	public static final int _25TH_ANNIVERSARY_DRAGON_BABY = 15605;
-
-	/**
-	 * Lesser demon
-	 */
-	public static final int _25TH_ANNIVERSARY_DEMON_LESSER = 15606;
-
-	/**
-	 * Greater demon
-	 */
-	public static final int _25TH_ANNIVERSARY_DEMON_GREATER = 15607;
-
-	/**
-	 * Black demon
-	 */
-	public static final int _25TH_ANNIVERSARY_DEMON_BLACK = 15608;
-
-	/**
-	 * Scorpion
-	 */
-	public static final int _25TH_ANNIVERSARY_SCORPION = 15609;
-
-	/**
-	 * King Scorpion
-	 */
-	public static final int _25TH_ANNIVERSARY_KINGSCORPION = 15610;
-
-	/**
-	 * Orc
-	 */
-	public static final int _25TH_ANNIVERSARY_ORC = 15611;
-
-	/**
-	 * Lizard man
-	 */
-	public static final int _25TH_ANNIVERSARY_LIZARDMAN = 15612;
-
-	/**
-	 * Troll
-	 */
-	public static final int _25TH_ANNIVERSARY_TROLL = 15613;
-
-	/**
-	 * Cave Bug
-	 */
-	public static final int _25TH_ANNIVERSARY_CAVE_BUG_COMBAT = 15614;
-
-	/**
-	 * Cave Bug
-	 */
-	public static final int _25TH_ANNIVERSARY_CAVE_BUG_DECORATIVE = 15615;
-
-	/**
-	 * Kalphite Queen
-	 */
-	public static final int _25TH_ANNIVERSARY_KALPHITE_QUEEN_WALKING = 15616;
-
-	/**
-	 * Kalphite Queen
-	 */
-	public static final int _25TH_ANNIVERSARY_KALPHITE_QUEEN_DEAD = 15617;
-
-	/**
-	 * Kalphite Queen
-	 */
-	public static final int _25TH_ANNIVERSARY_KALPHITE_QUEEN_FLYING = 15618;
-
-	/**
-	 * Fire giant
-	 */
-	public static final int _25TH_ANNIVERSARY_FIRE_GIANT = 15619;
-
-	/**
-	 * Hill Giant
-	 */
-	public static final int _25TH_ANNIVERSARY_HILL_GIANT = 15620;
-
-	/**
-	 * Goblin
-	 */
-	public static final int _25TH_ANNIVERSARY_GOBLIN = 15621;
-
-	/**
-	 * BigRedJapan
-	 */
-	public static final int ROOFTOPS_BIGREDJAPAN_OP = 15622;
-
-	/**
-	 * BigRedJapan
-	 */
-	public static final int ROOFTOPS_BIGREDJAPAN_NOOP = 15623;
+	public static final int CANOEING_LARA = 15605;
 	public static final int COWBOSS_MAPPED = 15624;
 
 	/**
@@ -67970,5 +67904,10 @@ public final class NpcID
 	 * Beef
 	 */
 	public static final int POH_COWBOSS_PET = 15633;
+
+	/**
+	 * Wizard Gary
+	 */
+	public static final int _25TH_HOST = 15634;
 /* This file is automatically generated. Do not edit. */
 }

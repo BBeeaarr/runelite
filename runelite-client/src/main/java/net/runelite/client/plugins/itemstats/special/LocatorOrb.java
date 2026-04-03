@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Adam <Adam@sigterm.info>
+ * Copyright (c) 2021, Jordan Atwood <nightfirecat@nightfirec.at>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -22,30 +22,24 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package net.runelite.cache.script;
+package net.runelite.client.plugins.itemstats.special;
 
-public class Instruction
+import net.runelite.api.Client;
+import net.runelite.client.plugins.itemstats.StatBoost;
+import static net.runelite.client.plugins.itemstats.stats.Stats.HITPOINTS;
+
+public class LocatorOrb extends StatBoost
 {
-	private final int opcode;
-	private String name;
-
-	public Instruction(int opcode)
+	public LocatorOrb()
 	{
-		this.opcode = opcode;
+		super(HITPOINTS, false);
 	}
 
-	public int getOpcode()
+	@Override
+	public int heals(final Client client)
 	{
-		return opcode;
-	}
+		final int current = getStat().getValue(client);
 
-	public String getName()
-	{
-		return name;
-	}
-
-	public void setName(String name)
-	{
-		this.name = name;
+		return -1 * Math.max(0, Math.min(current - 1, 10));
 	}
 }

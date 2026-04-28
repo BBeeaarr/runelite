@@ -30,17 +30,19 @@ import java.awt.Graphics2D;
 import javax.inject.Inject;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.ItemLayer;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.NPC;
+import net.runelite.api.Player;
 import net.runelite.api.Point;
+import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
-import net.runelite.api.widgets.WidgetID;
-import net.runelite.api.widgets.WidgetInfo;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
-import net.runelite.client.ui.overlay.OverlayPriority;
 import net.runelite.client.ui.overlay.outline.ModelOutlineRenderer;
 import net.runelite.client.util.ColorUtil;
 
@@ -62,7 +64,7 @@ class InteractHighlightOverlay extends Overlay
 		this.modelOutlineRenderer = modelOutlineRenderer;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_SCENE);
-		setPriority(OverlayPriority.HIGH);
+		setPriority(PRIORITY_HIGH);
 	}
 
 	@Override
@@ -86,7 +88,6 @@ class InteractHighlightOverlay extends Overlay
 
 		switch (menuAction)
 		{
-			case ITEM_USE_ON_GAME_OBJECT:
 			case WIDGET_TARGET_ON_GAME_OBJECT:
 			case GAME_OBJECT_FIRST_OPTION:
 			case GAME_OBJECT_SECOND_OPTION:
@@ -95,17 +96,37 @@ class InteractHighlightOverlay extends Overlay
 			case GAME_OBJECT_FIFTH_OPTION:
 			case EXAMINE_OBJECT:
 			{
+				int worldId = entry.getWorldViewId();
 				int x = entry.getParam0();
 				int y = entry.getParam1();
 				int id = entry.getIdentifier();
-				TileObject tileObject = plugin.findTileObject(x, y, id);
+				TileObject tileObject = plugin.findTileObject(worldId, x, y, id);
 				if (tileObject != null && config.objectShowHover() && (tileObject != plugin.getInteractedObject() || !config.objectShowInteract()))
 				{
 					modelOutlineRenderer.drawOutline(tileObject, config.borderWidth(), config.objectHoverHighlightColor(), config.outlineFeather());
 				}
 				break;
 			}
-			case ITEM_USE_ON_NPC:
+			case WIDGET_TARGET_ON_GROUND_ITEM:
+			case GROUND_ITEM_FIRST_OPTION:
+			case GROUND_ITEM_SECOND_OPTION:
+			case GROUND_ITEM_THIRD_OPTION:
+			case GROUND_ITEM_FOURTH_OPTION:
+			case GROUND_ITEM_FIFTH_OPTION:
+			case EXAMINE_ITEM_GROUND:
+			{
+				int worldId = entry.getWorldViewId();
+				int x = entry.getParam0();
+				int y = entry.getParam1();
+				int id = entry.getIdentifier();
+				ItemLayer layer = plugin.findItemLayer(worldId, x, y);
+				TileItem item = plugin.findItem(layer, id);
+				if (item != null && config.itemShowHover() && (item != plugin.getInteractedObject() || !config.itemShowInteract()))
+				{
+					modelOutlineRenderer.drawOutline(layer, item, config.borderWidth(), config.itemHoverHighlightColor(), config.outlineFeather());
+				}
+				break;
+			}
 			case WIDGET_TARGET_ON_NPC:
 			case NPC_FIRST_OPTION:
 			case NPC_SECOND_OPTION:
@@ -118,9 +139,26 @@ class InteractHighlightOverlay extends Overlay
 				if (npc != null && config.npcShowHover() && (npc != plugin.getInteractedTarget() || !config.npcShowInteract()))
 				{
 					Color highlightColor = menuAction == MenuAction.NPC_SECOND_OPTION
-						|| menuAction == MenuAction.WIDGET_TARGET_ON_NPC && WidgetInfo.TO_GROUP(client.getSelectedWidget().getId()) == WidgetID.SPELLBOOK_GROUP_ID
+						|| menuAction == MenuAction.WIDGET_TARGET_ON_NPC && WidgetUtil.componentToInterface(client.getSelectedWidget().getId()) == InterfaceID.MAGIC_SPELLBOOK
 						? config.npcAttackHoverHighlightColor() : config.npcHoverHighlightColor();
 					modelOutlineRenderer.drawOutline(npc, config.borderWidth(), highlightColor, config.outlineFeather());
+				}
+				break;
+			}
+			case WIDGET_TARGET_ON_PLAYER:
+			case PLAYER_FIRST_OPTION:
+			case PLAYER_SECOND_OPTION:
+			case PLAYER_THIRD_OPTION:
+			case PLAYER_FOURTH_OPTION:
+			case PLAYER_FIFTH_OPTION:
+			case PLAYER_SIXTH_OPTION:
+			case PLAYER_SEVENTH_OPTION:
+			case PLAYER_EIGHTH_OPTION:
+			{
+				Player player = entry.getPlayer();
+				if (player != null && config.playerShowHover() && (player != plugin.getInteractedTarget() || !config.npcShowInteract()))
+				{
+					modelOutlineRenderer.drawOutline(player, config.borderWidth(), config.playerHoverHighlightColor(), config.outlineFeather());
 				}
 				break;
 			}
@@ -130,7 +168,14 @@ class InteractHighlightOverlay extends Overlay
 	private void renderTarget()
 	{
 		TileObject interactedObject = plugin.getInteractedObject();
-		if (interactedObject != null && config.objectShowInteract())
+		TileItem item = plugin.getInteractedItem();
+		if (item != null && interactedObject != null && config.itemShowInteract())
+		{
+			Color clickColor = getClickColor(config.itemHoverHighlightColor(), config.itemInteractHighlightColor(),
+				client.getGameCycle() - plugin.getGameCycle());
+			modelOutlineRenderer.drawOutline((ItemLayer) interactedObject, item, config.borderWidth(), clickColor, config.outlineFeather());
+		}
+		else if (interactedObject != null && item == null && config.objectShowInteract())
 		{
 			Color clickColor = getClickColor(config.objectHoverHighlightColor(), config.objectInteractHighlightColor(),
 				client.getGameCycle() - plugin.getGameCycle());
@@ -144,7 +189,13 @@ class InteractHighlightOverlay extends Overlay
 			Color endColor = plugin.isAttacked() ? config.npcAttackHighlightColor() : config.npcInteractHighlightColor();
 			Color clickColor = getClickColor(startColor, endColor,
 				client.getGameCycle() - plugin.getGameCycle());
-			modelOutlineRenderer.drawOutline((NPC) target, config.borderWidth(), clickColor, config.outlineFeather());
+			modelOutlineRenderer.drawOutline(target, config.borderWidth(), clickColor, config.outlineFeather());
+		}
+		else if (target instanceof Player && config.playerShowInteract())
+		{
+			Color clickColor = getClickColor(config.playerHoverHighlightColor(), config.playerInteractHighlightColor(),
+				client.getGameCycle() - plugin.getGameCycle());
+			modelOutlineRenderer.drawOutline(target, config.borderWidth(), clickColor, config.outlineFeather());
 		}
 	}
 

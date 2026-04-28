@@ -25,9 +25,14 @@
 package net.runelite.client;
 
 import com.google.gson.Gson;
+import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
+import java.nio.file.Files;
+import java.time.Duration;
+import java.util.Collections;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.http.api.RuneLiteAPI;
@@ -35,6 +40,7 @@ import net.runelite.http.api.telemetry.Telemetry;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.HttpUrl;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -76,18 +82,63 @@ public class TelemetryClient
 		});
 	}
 
-	public void submitError(String type, String error)
+	void submitVmErrors(File logsDir)
 	{
-		HttpUrl url = apiBase.newBuilder()
+		try
+		{
+			long yesterday = System.currentTimeMillis() - Duration.ofDays(1).toMillis();
+			for (File f : logsDir.listFiles())
+			{
+				if (!f.getName().startsWith("jvm_crash_") || !f.getName().endsWith(".log") // jvm_crash_pid_12345.log
+					|| f.getName().endsWith("_r.log") // avoid sending logs multiple times
+					|| f.lastModified() < yesterday)
+				{
+					continue;
+				}
+
+				String hsErr = Files.readString(f.toPath());
+
+				String destName = f.getName().substring(0, f.getName().length() - 4) + "_r.log";
+				File dest = new File(logsDir, destName);
+				if (!f.renameTo(dest))
+				{
+					continue;
+				}
+
+				// strip username and home directory from the error log
+				String username = System.getProperty("user.name");
+				String home = System.getProperty("user.home");
+				hsErr = hsErr
+					.replace(username, "%USERNAME%")
+					.replace(home, "%HOME%");
+
+				submitError("vm crash", hsErr, Collections.emptyMap());
+			}
+		}
+		catch (Exception ex)
+		{
+			log.error("error reporting errors", ex);
+		}
+	}
+
+	public void submitError(String type, String error, Map<String, String> params)
+	{
+		HttpUrl.Builder urlBuilder = apiBase.newBuilder()
 			.addPathSegment("telemetry")
 			.addPathSegment("error")
 			.addQueryParameter("type", type)
-			.addQueryParameter("error", error)
-			.build();
+			.addQueryParameter("osname", System.getProperty("os.name"))
+			.addQueryParameter("osver", System.getProperty("os.version"))
+			.addQueryParameter("osarch", System.getProperty("os.arch"))
+			.addQueryParameter("javaversion", System.getProperty("java.version"))
+			.addQueryParameter("javavendor", System.getProperty("java.vendor"));
+		params.forEach(urlBuilder::addQueryParameter);
+
+		HttpUrl url = urlBuilder.build();
 
 		Request request = new Request.Builder()
 			.url(url)
-			.post(RequestBody.create(null, new byte[0]))
+			.post(RequestBody.create(MediaType.get("text/plain"), error))
 			.build();
 
 		okHttpClient.newCall(request).enqueue(new Callback()
@@ -122,6 +173,7 @@ public class TelemetryClient
 			long totalPhysicalMemorySize = ((com.sun.management.OperatingSystemMXBean) operatingSystemMXBean).getTotalPhysicalMemorySize();
 			telemetry.setTotalMemory(totalPhysicalMemorySize);
 		}
+		telemetry.setJxAccount(System.getenv("JX_SESSION_ID") != null && System.getenv("JX_CHARACTER_ID") != null);
 		return telemetry;
 	}
 }

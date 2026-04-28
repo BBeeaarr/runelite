@@ -24,16 +24,27 @@
  */
 package net.runelite.cache.definitions.loaders;
 
-import java.util.HashMap;
-import java.util.Map;
+import lombok.Data;
+import lombok.experimental.Accessors;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.cache.definitions.ObjectDefinition;
 import net.runelite.cache.io.InputStream;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+@Accessors(chain = true)
+@Data
+@Slf4j
 public class ObjectLoader
 {
-	private static final Logger logger = LoggerFactory.getLogger(ObjectLoader.class);
+	public static final int REV_220_OBJ_ARCHIVE_REV = 1673;
+
+	private boolean rev220SoundData = true;
+	private EntityOpsLoader entityOpsLoader = new EntityOpsLoader();
+
+	public ObjectLoader configureForRevision(int rev)
+	{
+		this.rev220SoundData = rev >= REV_220_OBJ_ARCHIVE_REV;
+		return this;
+	}
 
 	public ObjectDefinition load(int id, byte[] b)
 	{
@@ -98,6 +109,40 @@ public class ObjectLoader
 				def.setObjectModels(objectModels);
 			}
 		}
+		else if (opcode == 6)
+		{
+			int length = is.readUnsignedByte();
+			if (length > 0)
+			{
+				int[] objectTypes = new int[length];
+				int[] objectModels = new int[length];
+
+				for (int index = 0; index < length; ++index)
+				{
+					objectModels[index] = is.readInt();
+					objectTypes[index] = is.readUnsignedByte();
+				}
+
+				def.setObjectTypes(objectTypes);
+				def.setObjectModels(objectModels);
+			}
+		}
+		else if (opcode == 7)
+		{
+			int length = is.readUnsignedByte();
+			if (length > 0)
+			{
+				def.setObjectTypes(null);
+				int[] objectModels = new int[length];
+
+				for (int index = 0; index < length; ++index)
+				{
+					objectModels[index] = is.readInt();
+				}
+
+				def.setObjectModels(objectModels);
+			}
+		}
 		else if (opcode == 14)
 		{
 			def.setSizeX(is.readUnsignedByte());
@@ -129,7 +174,7 @@ public class ObjectLoader
 		}
 		else if (opcode == 23)
 		{
-			def.setABool2111(true);
+			def.setModelClipped(true);
 		}
 		else if (opcode == 24)
 		{
@@ -157,12 +202,7 @@ public class ObjectLoader
 		}
 		else if (opcode >= 30 && opcode < 35)
 		{
-			String[] actions = def.getActions();
-			actions[opcode - 30] = is.readString();
-			if (actions[opcode - 30].equalsIgnoreCase("Hidden"))
-			{
-				actions[opcode - 30] = null;
-			}
+			entityOpsLoader.decodeOp(def.getOps(), is, opcode - 30);
 		}
 		else if (opcode == 40)
 		{
@@ -285,22 +325,30 @@ public class ObjectLoader
 		else if (opcode == 78)
 		{
 			def.setAmbientSoundId(is.readUnsignedShort());
-			def.setAnInt2083(is.readUnsignedByte());
+			def.setAmbientSoundDistance(is.readUnsignedByte());
+			if (rev220SoundData)
+			{
+				def.setAmbientSoundRetain(is.readUnsignedByte());
+			}
 		}
 		else if (opcode == 79)
 		{
-			def.setAnInt2112(is.readUnsignedShort());
-			def.setAnInt2113(is.readUnsignedShort());
-			def.setAnInt2083(is.readUnsignedByte());
+			def.setAmbientSoundChangeTicksMin(is.readUnsignedShort());
+			def.setAmbientSoundChangeTicksMax(is.readUnsignedShort());
+			def.setAmbientSoundDistance(is.readUnsignedByte());
+			if (rev220SoundData)
+			{
+				def.setAmbientSoundRetain(is.readUnsignedByte());
+			}
 			int length = is.readUnsignedByte();
-			int[] anIntArray2084 = new int[length];
+			int[] ambientSoundIds = new int[length];
 
 			for (int index = 0; index < length; ++index)
 			{
-				anIntArray2084[index] = is.readUnsignedShort();
+				ambientSoundIds[index] = is.readUnsignedShort();
 			}
 
-			def.setAmbientSoundIds(anIntArray2084);
+			def.setAmbientSoundIds(ambientSoundIds);
 		}
 		else if (opcode == 81)
 		{
@@ -313,6 +361,14 @@ public class ObjectLoader
 		else if (opcode == 89)
 		{
 			def.setRandomizeAnimStart(true);
+		}
+		else if (opcode == 90)
+		{
+			def.setDeferAnimChange(true);
+		}
+		else if (opcode == 91)
+		{
+			def.setSoundDistanceFadeCurve(is.readUnsignedByte());
 		}
 		else if (opcode == 92)
 		{
@@ -353,35 +409,44 @@ public class ObjectLoader
 
 			def.setConfigChangeDest(configChangeDest);
 		}
+		else if (opcode == 93)
+		{
+			def.setSoundFadeInCurve(is.readUnsignedByte());
+			def.setSoundFadeInDuration(is.readUnsignedShort());
+			def.setSoundFadeOutCurve(is.readUnsignedByte());
+			def.setSoundFadeOutDuration(is.readUnsignedShort());
+		}
+		else if (opcode == 94)
+		{
+			def.setUnknown1(true);
+		}
+		else if (opcode == 95)
+		{
+			def.setSoundVisibility(is.readUnsignedByte());
+		}
+		else if (opcode == 96)
+		{
+			def.setRaise(is.readUnsignedByte());
+		}
+		else if (opcode == 100)
+		{
+			entityOpsLoader.decodeSubOp(def.getOps(), is);
+		}
+		else if (opcode == 101)
+		{
+			entityOpsLoader.decodeConditionalOp(def.getOps(), is);
+		}
+		else if (opcode == 102)
+		{
+			entityOpsLoader.decodeConditionalSubOp(def.getOps(), is);
+		}
 		else if (opcode == 249)
 		{
-			int length = is.readUnsignedByte();
-
-			Map<Integer, Object> params = new HashMap<>(length);
-			for (int i = 0; i < length; i++)
-			{
-				boolean isString = is.readUnsignedByte() == 1;
-				int key = is.read24BitInt();
-				Object value;
-
-				if (isString)
-				{
-					value = is.readString();
-				}
-
-				else
-				{
-					value = is.readInt();
-				}
-
-				params.put(key, value);
-			}
-
-			def.setParams(params);
+			def.setParams(is.readParams());
 		}
 		else
 		{
-			logger.warn("Unrecognized opcode {}", opcode);
+			log.warn("Unrecognized opcode {}", opcode);
 		}
 	}
 
@@ -396,12 +461,9 @@ public class ObjectLoader
 				def.setWallOrDoor(1);
 			}
 
-			for (int var1 = 0; var1 < 5; ++var1)
+			if (def.getOps().ops.stream().anyMatch(op -> op != null && op.text != null))
 			{
-				if (def.getActions()[var1] != null)
-				{
-					def.setWallOrDoor(1);
-				}
+				def.setWallOrDoor(1);
 			}
 		}
 

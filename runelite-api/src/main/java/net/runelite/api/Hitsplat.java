@@ -24,7 +24,6 @@
  */
 package net.runelite.api;
 
-import lombok.Getter;
 import static net.runelite.api.HitsplatID.BLOCK_ME;
 import static net.runelite.api.HitsplatID.BLOCK_OTHER;
 import static net.runelite.api.HitsplatID.DAMAGE_MAX_ME;
@@ -32,52 +31,45 @@ import static net.runelite.api.HitsplatID.DAMAGE_MAX_ME_CYAN;
 import static net.runelite.api.HitsplatID.DAMAGE_MAX_ME_ORANGE;
 import static net.runelite.api.HitsplatID.DAMAGE_MAX_ME_WHITE;
 import static net.runelite.api.HitsplatID.DAMAGE_MAX_ME_YELLOW;
+import static net.runelite.api.HitsplatID.DAMAGE_MAX_ME_POISE;
 import static net.runelite.api.HitsplatID.DAMAGE_ME;
 import static net.runelite.api.HitsplatID.DAMAGE_ME_CYAN;
 import static net.runelite.api.HitsplatID.DAMAGE_ME_ORANGE;
 import static net.runelite.api.HitsplatID.DAMAGE_ME_WHITE;
 import static net.runelite.api.HitsplatID.DAMAGE_ME_YELLOW;
+import static net.runelite.api.HitsplatID.DAMAGE_ME_POISE;
 import static net.runelite.api.HitsplatID.DAMAGE_OTHER;
 import static net.runelite.api.HitsplatID.DAMAGE_OTHER_CYAN;
 import static net.runelite.api.HitsplatID.DAMAGE_OTHER_ORANGE;
 import static net.runelite.api.HitsplatID.DAMAGE_OTHER_WHITE;
 import static net.runelite.api.HitsplatID.DAMAGE_OTHER_YELLOW;
+import static net.runelite.api.HitsplatID.DAMAGE_OTHER_POISE;
 import net.runelite.api.annotations.HitsplatType;
 
 /**
  * A hitsplat that has been applied to an {@link Actor}.
  */
-public class Hitsplat
+public interface Hitsplat
 {
 	/**
 	 * The type of hitsplat.
 	 */
-	@Getter(onMethod_ = {@HitsplatType})
 	@HitsplatType
-	private int hitsplatType;
+	int getHitsplatType();
 
 	/**
 	 * The value displayed by the hitsplat.
 	 */
-	@Getter
-	private int amount;
+	int getAmount();
 
 	/**
 	 * When the hitsplat will disappear.
 	 */
-	@Getter
-	private int disappearsOnGameCycle;
+	int getDisappearsOnGameCycle();
 
-	public Hitsplat(@HitsplatType int hitsplatType, int amount, int disappearsOnGameCycle)
+	default boolean isMine()
 	{
-		this.hitsplatType = hitsplatType;
-		this.amount = amount;
-		this.disappearsOnGameCycle = disappearsOnGameCycle;
-	}
-
-	public boolean isMine()
-	{
-		switch (hitsplatType)
+		switch (getHitsplatType())
 		{
 			case BLOCK_ME:
 			case DAMAGE_ME:
@@ -85,20 +77,22 @@ public class Hitsplat
 			case DAMAGE_ME_YELLOW:
 			case DAMAGE_ME_ORANGE:
 			case DAMAGE_ME_WHITE:
+			case DAMAGE_ME_POISE:
 			case DAMAGE_MAX_ME:
 			case DAMAGE_MAX_ME_CYAN:
 			case DAMAGE_MAX_ME_ORANGE:
 			case DAMAGE_MAX_ME_YELLOW:
 			case DAMAGE_MAX_ME_WHITE:
+			case DAMAGE_MAX_ME_POISE:
 				return true;
 			default:
 				return false;
 		}
 	}
 
-	public boolean isOthers()
+	default boolean isOthers()
 	{
-		switch (hitsplatType)
+		switch (getHitsplatType())
 		{
 			case BLOCK_OTHER:
 			case DAMAGE_OTHER:
@@ -106,6 +100,7 @@ public class Hitsplat
 			case DAMAGE_OTHER_YELLOW:
 			case DAMAGE_OTHER_ORANGE:
 			case DAMAGE_OTHER_WHITE:
+			case DAMAGE_OTHER_POISE:
 				return true;
 			default:
 				return false;

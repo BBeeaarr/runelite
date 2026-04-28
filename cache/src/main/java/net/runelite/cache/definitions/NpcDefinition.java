@@ -27,6 +27,7 @@ package net.runelite.cache.definitions;
 
 import java.util.Map;
 import lombok.Data;
+import net.runelite.cache.EntityOpsDefinition;
 
 @Data
 public class NpcDefinition
@@ -51,16 +52,17 @@ public class NpcDefinition
 	public int crawlRotate180Animation = -1;
 	public int crawlRotateLeftAnimation = -1;
 	public int crawlRotateRightAnimation = -1;
+	public boolean idleAnimRestart;
 	public short[] recolorToFind;
 	public short[] recolorToReplace;
 	public short[] retextureToFind;
 	public short[] retextureToReplace;
-	public String[] actions = new String[5];
+	public EntityOpsDefinition ops = new EntityOpsDefinition();
 	public boolean isMinimapVisible = true;
 	public int combatLevel = -1;
 	public int widthScale = 128;
 	public int heightScale = 128;
-	public boolean hasRenderPriority;
+	public int renderPriority = 0;
 	public int ambient;
 	public int contrast;
 	public int[] headIconArchiveIds;
@@ -71,7 +73,15 @@ public class NpcDefinition
 	public int varpIndex = -1;
 	public boolean isInteractable = true;
 	public boolean rotationFlag = true;
-	public boolean isPet;
+	public boolean isFollower;
+	public boolean lowPriorityFollowerOps;
 	public Map<Integer, Object> params;
 	public int category;
+	public int height = -1;
+	public int[] stats = {1, 1, 1, 1, 1, 1};
+	public int footprintSize = -1;
+	public boolean canHideForOverlap;
+	public int overlapTintHSL = 39188;
+	public boolean unknown1 = false;
+	public boolean zbuf = true;
 }

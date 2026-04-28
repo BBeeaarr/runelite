@@ -25,17 +25,14 @@
  */
 package net.runelite.client.plugins.grounditems;
 
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.LoadingCache;
-import com.google.common.collect.EvictingQueue;
+import com.google.common.base.MoreObjects;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Table;
 import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.Rectangle;
-import static java.lang.Boolean.FALSE;
-import static java.lang.Boolean.TRUE;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -43,42 +40,46 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Objects;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.Value;
 import net.runelite.api.Client;
-import net.runelite.api.GameState;
 import net.runelite.api.ItemComposition;
-import net.runelite.api.ItemID;
+import net.runelite.api.ItemLayer;
+import net.runelite.api.KeyCode;
+import net.runelite.api.Menu;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
+import static net.runelite.api.TileItem.OWNERSHIP_GROUP;
+import static net.runelite.api.TileItem.OWNERSHIP_OTHER;
+import static net.runelite.api.TileItem.OWNERSHIP_SELF;
+import net.runelite.api.WorldView;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.FocusChanged;
-import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.ItemQuantityChanged;
 import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.MenuEntryAdded;
-import net.runelite.api.events.MenuOptionClicked;
-import net.runelite.api.widgets.WidgetInfo;
+import net.runelite.api.events.WorldViewUnloaded;
+import net.runelite.api.gameval.ItemID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
-import net.runelite.client.events.NpcLootReceived;
-import net.runelite.client.events.PlayerLootReceived;
+import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.game.ItemStack;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.plugins.Plugin;
@@ -89,9 +90,13 @@ import net.runelite.client.plugins.grounditems.config.MenuHighlightMode;
 import static net.runelite.client.plugins.grounditems.config.MenuHighlightMode.BOTH;
 import static net.runelite.client.plugins.grounditems.config.MenuHighlightMode.NAME;
 import static net.runelite.client.plugins.grounditems.config.MenuHighlightMode.OPTION;
+import net.runelite.client.plugins.grounditems.config.OwnershipFilterMode;
+import net.runelite.client.ui.components.colorpicker.ColorPickerManager;
+import net.runelite.client.ui.components.colorpicker.RuneliteColorPicker;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ColorUtil;
 import net.runelite.client.util.QuantityFormatter;
+import net.runelite.client.util.RSTimeUnit;
 import net.runelite.client.util.Text;
 
 @PluginDescriptor(
@@ -101,6 +106,8 @@ import net.runelite.client.util.Text;
 )
 public class GroundItemsPlugin extends Plugin
 {
+	private static final String HIGHLIGHT_COLOR_PREFIX = "highlight_";
+
 	@Value
 	static class PriceHighlight
 	{
@@ -109,7 +116,7 @@ public class GroundItemsPlugin extends Plugin
 	}
 
 	// ItemID for coins
-	private static final int COINS = ItemID.COINS_995;
+	private static final int COINS = ItemID.COINS;
 
 	@Getter(AccessLevel.PACKAGE)
 	@Setter(AccessLevel.PACKAGE)
@@ -131,8 +138,8 @@ public class GroundItemsPlugin extends Plugin
 	@Setter(AccessLevel.PACKAGE)
 	private boolean hideAll;
 
-	private List<String> hiddenItemList = new CopyOnWriteArrayList<>();
-	private List<String> highlightedItemsList = new CopyOnWriteArrayList<>();
+	private ItemList highlightedItems = new ItemList(Collections.emptyList());
+	private ItemList hiddenItems = new ItemList(Collections.emptyList());
 
 	@Inject
 	private GroundItemHotkeyListener hotkeyListener;
@@ -170,13 +177,15 @@ public class GroundItemsPlugin extends Plugin
 	@Inject
 	private ScheduledExecutorService executor;
 
+	@Inject
+	private ConfigManager configManager;
+
+	@Inject
+	private ColorPickerManager colorPickerManager;
+
 	@Getter
 	private final Table<WorldPoint, Integer, GroundItem> collectedGroundItems = HashBasedTable.create();
 	private List<PriceHighlight> priceChecks = ImmutableList.of();
-	private LoadingCache<NamedQuantity, Boolean> highlightedItems;
-	private LoadingCache<NamedQuantity, Boolean> hiddenItems;
-	private final Queue<Integer> droppedItemQueue = EvictingQueue.create(16); // recently dropped items
-	private int lastUsedItem;
 	private final Map<WorldPoint, Lootbeam> lootbeams = new HashMap<>();
 
 	@Provides
@@ -191,8 +200,8 @@ public class GroundItemsPlugin extends Plugin
 		overlayManager.add(overlay);
 		mouseManager.registerMouseListener(mouseAdapter);
 		keyManager.registerKeyListener(hotkeyListener);
+		migrate();
 		executor.execute(this::reset);
-		lastUsedItem = -1;
 	}
 
 	@Override
@@ -201,12 +210,6 @@ public class GroundItemsPlugin extends Plugin
 		overlayManager.remove(overlay);
 		mouseManager.unregisterMouseListener(mouseAdapter);
 		keyManager.unregisterKeyListener(hotkeyListener);
-		highlightedItems.invalidateAll();
-		highlightedItems = null;
-		hiddenItems.invalidateAll();
-		hiddenItems = null;
-		hiddenItemList = null;
-		highlightedItemsList = null;
 		collectedGroundItems.clear();
 		clientThread.invokeLater(this::removeAllLootbeams);
 	}
@@ -214,20 +217,39 @@ public class GroundItemsPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (event.getGroup().equals("grounditems"))
+		if (event.getGroup().equals(GroundItemsConfig.GROUP))
 		{
 			executor.execute(this::reset);
 		}
 	}
 
 	@Subscribe
-	public void onGameStateChanged(final GameStateChanged event)
+	public void onProfileChanged(ProfileChanged profileChanged)
 	{
-		if (event.getGameState() == GameState.LOADING)
+		migrate();
+	}
+
+	private void migrate()
+	{
+		//This was the old "Only show own items" config, which is now obsolete and replaced by ownership filter
+		Boolean onlyShowOwnItems = configManager.getConfiguration(GroundItemsConfig.GROUP, "onlyShowLoot", Boolean.class);
+		if (onlyShowOwnItems != null)
 		{
-			collectedGroundItems.clear();
-			lootbeams.clear();
+			if (onlyShowOwnItems)
+			{
+				//The old behavior maps to 'Drops' in the new dropdown
+				configManager.setConfiguration(GroundItemsConfig.GROUP, GroundItemsConfig.OWNERSHIP_FILTER_MODE, OwnershipFilterMode.DROPS);
+			}
+			configManager.unsetConfiguration(GroundItemsConfig.GROUP, "onlyShowLoot");
 		}
+	}
+
+	@Subscribe
+	public void onWorldViewUnloaded(WorldViewUnloaded event)
+	{
+		var wv = event.getWorldView();
+		collectedGroundItems.values().removeIf(g -> g.getItemLayer().getWorldView() == wv);
+		lootbeams.values().removeIf(l -> l.getWorldView() == wv.getId());
 	}
 
 	@Subscribe
@@ -235,25 +257,42 @@ public class GroundItemsPlugin extends Plugin
 	{
 		TileItem item = itemSpawned.getItem();
 		Tile tile = itemSpawned.getTile();
+		ItemLayer layer = tile.getItemLayer();
 
-		GroundItem groundItem = buildGroundItem(tile, item);
+		GroundItem groundItem = buildGroundItem(layer, item);
 		GroundItem existing = collectedGroundItems.get(tile.getWorldLocation(), item.getId());
 		if (existing != null)
 		{
 			existing.setQuantity(existing.getQuantity() + groundItem.getQuantity());
 			// The spawn time remains set at the oldest spawn
+			existing.reset();
 		}
 		else
 		{
 			collectedGroundItems.put(tile.getWorldLocation(), item.getId(), groundItem);
 		}
 
-		if (!config.onlyShowLoot())
+		if (shouldDisplayItem(config.ownershipFilterMode(), groundItem.getOwnership(), client.getVarbitValue(VarbitID.IRONMAN)))
 		{
 			notifyHighlightedItem(groundItem);
 		}
 
 		handleLootbeam(tile.getWorldLocation());
+	}
+
+	void updateItemColor(GroundItem item)
+	{
+		if (item.color != null)
+		{
+			return;
+		}
+
+		final Color highlighted = getHighlighted(item);
+		final boolean hidden = isHidden(item);
+
+		item.highlighted = highlighted != null;
+		item.hidden = hidden;
+		item.color = getItemColor(highlighted, hidden);
 	}
 
 	@Subscribe
@@ -279,6 +318,7 @@ public class GroundItemsPlugin extends Plugin
 			// it is not known which item is picked up, so we invalidate the spawn
 			// time
 			groundItem.setSpawnTime(null);
+			groundItem.reset();
 		}
 
 		handleLootbeam(tile.getWorldLocation());
@@ -297,23 +337,10 @@ public class GroundItemsPlugin extends Plugin
 		if (groundItem != null)
 		{
 			groundItem.setQuantity(groundItem.getQuantity() + diff);
+			groundItem.reset();
 		}
 
 		handleLootbeam(tile.getWorldLocation());
-	}
-
-	@Subscribe
-	public void onNpcLootReceived(NpcLootReceived npcLootReceived)
-	{
-		Collection<ItemStack> items = npcLootReceived.getItems();
-		lootReceived(items, LootType.PVM);
-	}
-
-	@Subscribe
-	public void onPlayerLootReceived(PlayerLootReceived playerLootReceived)
-	{
-		Collection<ItemStack> items = playerLootReceived.getItems();
-		lootReceived(items, LootType.PVP);
 	}
 
 	@Subscribe
@@ -365,53 +392,30 @@ public class GroundItemsPlugin extends Plugin
 		}).toArray(MenuEntry[]::new));
 	}
 
-	private void lootReceived(Collection<ItemStack> items, LootType lootType)
-	{
-		for (ItemStack itemStack : items)
-		{
-			WorldPoint location = WorldPoint.fromLocal(client, itemStack.getLocation());
-			GroundItem groundItem = collectedGroundItems.get(location, itemStack.getId());
-			if (groundItem != null)
-			{
-				groundItem.setLootType(lootType);
-
-				if (config.onlyShowLoot())
-				{
-					notifyHighlightedItem(groundItem);
-				}
-			}
-		}
-
-		// Since the loot can potentially be over multiple tiles, make sure to process lootbeams on all those tiles
-		items.stream()
-			.map(ItemStack::getLocation)
-			.map(l -> WorldPoint.fromLocal(client, l))
-			.distinct()
-			.forEach(this::handleLootbeam);
-	}
-
-	private GroundItem buildGroundItem(final Tile tile, final TileItem item)
+	private GroundItem buildGroundItem(final ItemLayer layer, final TileItem item)
 	{
 		// Collect the data for the item
 		final int itemId = item.getId();
 		final ItemComposition itemComposition = itemManager.getItemComposition(itemId);
 		final int realItemId = itemComposition.getNote() != -1 ? itemComposition.getLinkedNoteId() : itemId;
 		final int alchPrice = itemComposition.getHaPrice();
-		final boolean dropped = tile.getWorldLocation().equals(client.getLocalPlayer().getWorldLocation()) && droppedItemQueue.remove(itemId);
-		final boolean table = itemId == lastUsedItem && tile.getItemLayer().getHeight() > 0;
+		final int despawnTime = item.getDespawnTime() - client.getTickCount();
+		final int visibleTime = item.getVisibleTime() - client.getTickCount();
 
 		final GroundItem groundItem = GroundItem.builder()
 			.id(itemId)
-			.location(tile.getWorldLocation())
 			.itemId(realItemId)
 			.quantity(item.getQuantity())
+			.itemLayer(layer)
 			.name(itemComposition.getName())
 			.haPrice(alchPrice)
-			.height(tile.getItemLayer().getHeight())
 			.tradeable(itemComposition.isTradeable())
-			.lootType(dropped ? LootType.DROPPED : (table ? LootType.TABLE : LootType.UNKNOWN))
+			.ownership(item.getOwnership())
+			.isPrivate(item.isPrivate())
 			.spawnTime(Instant.now())
 			.stackable(itemComposition.isStackable())
+			.despawnTime(Duration.of(despawnTime, RSTimeUnit.GAME_TICKS))
+			.visibleTime(Duration.of(visibleTime, RSTimeUnit.GAME_TICKS))
 			.build();
 
 		// Update item price in case it is coins
@@ -430,21 +434,8 @@ public class GroundItemsPlugin extends Plugin
 
 	private void reset()
 	{
-		// gets the hidden items from the text box in the config
-		hiddenItemList = Text.fromCSV(config.getHiddenItems());
-
-		// gets the highlighted items from the text box in the config
-		highlightedItemsList = Text.fromCSV(config.getHighlightItems());
-
-		highlightedItems = CacheBuilder.newBuilder()
-			.maximumSize(512L)
-			.expireAfterAccess(10, TimeUnit.MINUTES)
-			.build(new WildcardMatchLoader(highlightedItemsList));
-
-		hiddenItems = CacheBuilder.newBuilder()
-			.maximumSize(512L)
-			.expireAfterAccess(10, TimeUnit.MINUTES)
-			.build(new WildcardMatchLoader(hiddenItemList));
+		highlightedItems = new ItemList(Text.fromCSV(config.getHighlightItems()));
+		hiddenItems = new ItemList(Text.fromCSV(config.getHiddenItems()));
 
 		// Cache colors
 		ImmutableList.Builder<PriceHighlight> priceCheckBuilder = ImmutableList.builder();
@@ -471,6 +462,7 @@ public class GroundItemsPlugin extends Plugin
 
 		priceChecks = priceCheckBuilder.build();
 
+		clientThread.invokeLater(() -> collectedGroundItems.values().forEach(GroundItem::reset));
 		clientThread.invokeLater(this::handleLootbeams);
 	}
 
@@ -478,6 +470,7 @@ public class GroundItemsPlugin extends Plugin
 	public void onMenuEntryAdded(MenuEntryAdded event)
 	{
 		MenuAction type = MenuAction.of(event.getType());
+		final boolean hotKeyPressed = client.isKeyPressed(KeyCode.KC_SHIFT);
 		if (type == MenuAction.GROUND_ITEM_FIRST_OPTION || type == MenuAction.GROUND_ITEM_SECOND_OPTION ||
 			type == MenuAction.GROUND_ITEM_THIRD_OPTION || type == MenuAction.GROUND_ITEM_FOURTH_OPTION ||
 			type == MenuAction.GROUND_ITEM_FIFTH_OPTION || type == MenuAction.WIDGET_TARGET_ON_GROUND_ITEM)
@@ -486,28 +479,25 @@ public class GroundItemsPlugin extends Plugin
 			final int sceneX = event.getActionParam0();
 			final int sceneY = event.getActionParam1();
 
-			MenuEntry[] menuEntries = client.getMenuEntries();
-			MenuEntry lastEntry = menuEntries[menuEntries.length - 1];
+			MenuEntry lastEntry = event.getMenuEntry();
+			WorldView wv = client.getWorldView(lastEntry.getWorldViewId());
 
-			final WorldPoint worldPoint = WorldPoint.fromScene(client, sceneX, sceneY, client.getPlane());
+			final WorldPoint worldPoint = WorldPoint.fromScene(wv, sceneX, sceneY, wv.getPlane());
 			GroundItem groundItem = collectedGroundItems.get(worldPoint, itemId);
-			int quantity = groundItem.getQuantity();
 
-			final int gePrice = groundItem.getGePrice();
-			final int haPrice = groundItem.getHaPrice();
-			final Color hidden = getHidden(new NamedQuantity(groundItem.getName(), quantity), gePrice, haPrice, groundItem.isTradeable());
-			final Color highlighted = getHighlighted(new NamedQuantity(groundItem.getName(), quantity), gePrice, haPrice);
-			final Color color = getItemColor(highlighted, hidden);
-			final boolean canBeRecolored = highlighted != null || (hidden != null && config.recolorMenuHiddenItems());
+			updateItemColor(groundItem);
+
+			int quantity = groundItem.getQuantity();
+			final boolean canBeRecolored = groundItem.highlighted || (groundItem.hidden && config.recolorMenuHiddenItems());
 
 			if ((config.itemHighlightMode() == ItemHighlightMode.MENU || config.itemHighlightMode() == ItemHighlightMode.BOTH) &&
-				(color != null && canBeRecolored && !color.equals(config.defaultColor())))
+				(canBeRecolored && !groundItem.color.equals(config.defaultColor())))
 			{
 				final MenuHighlightMode mode = config.menuHighlightMode();
 
 				if (mode == BOTH || mode == OPTION)
 				{
-					lastEntry.setOption(ColorUtil.prependColorTag(lastEntry.getOption(), color));
+					lastEntry.setOption(ColorUtil.prependColorTag(lastEntry.getOption(), groundItem.color));
 				}
 
 				if (mode == BOTH || mode == NAME)
@@ -517,7 +507,7 @@ public class GroundItemsPlugin extends Plugin
 					String target = lastEntry.getTarget();
 
 					int i = target.lastIndexOf('>');
-					lastEntry.setTarget(target.substring(0, i - 11) + ColorUtil.colorTag(color) + target.substring(i + 1));
+					lastEntry.setTarget(target.substring(0, i - 11) + ColorUtil.colorTag(groundItem.color) + target.substring(i + 1));
 				}
 			}
 
@@ -526,17 +516,65 @@ public class GroundItemsPlugin extends Plugin
 				lastEntry.setTarget(lastEntry.getTarget() + " (" + quantity + ")");
 			}
 
-			if (hidden != null && highlighted == null && config.deprioritizeHiddenItems())
+			if (groundItem.hidden && !groundItem.highlighted && config.deprioritizeHiddenItems())
 			{
 				lastEntry.setDeprioritized(true);
 			}
+		}
+		else if (hotKeyPressed && type == MenuAction.EXAMINE_ITEM_GROUND)
+		{
+			MenuEntry parent = client.createMenuEntry(-1)
+				.setOption("Color")
+				.setTarget(event.getTarget())
+				.setType(MenuAction.RUNELITE);
+			Menu submenu = parent.createSubMenu();
+			final int itemId = event.getIdentifier();
+			Color color = getItemColor(itemId);
+
+			if (color != null)
+			{
+				submenu.createMenuEntry(-1)
+					.setOption("Reset")
+					.setType(MenuAction.RUNELITE)
+					.onClick(e -> unsetItemColor(itemId));
+			}
+
+			submenu.createMenuEntry(-1)
+				.setOption("Pick")
+				.setType(MenuAction.RUNELITE)
+				.onClick(e ->
+					SwingUtilities.invokeLater(() ->
+					{
+						RuneliteColorPicker colorPicker = colorPickerManager.create(client,
+							color != null ? color : Color.decode("#FFFFFF"), "Item color", true);
+						colorPicker.setOnClose(c -> setItemColor(itemId, c));
+						colorPicker.setVisible(true);
+					}));
+
+			var colors = Stream.concat(
+					collectedGroundItems.values().stream()
+						.map(GroundItem::getColor)
+						.filter(Objects::nonNull),
+					// add some default colors
+					Stream.of(Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW, Color.MAGENTA)
+				)
+				.distinct()
+				.limit(5)
+				.collect(Collectors.toList());
+
+			colors.stream()
+				.filter(c -> !c.equals(color))
+				.forEach(c -> submenu.createMenuEntry(-1)
+					.setOption(ColorUtil.prependColorTag("Color", c))
+					.setType(MenuAction.RUNELITE)
+					.onClick(e -> setItemColor(itemId, c)));
 		}
 	}
 
 	void updateList(String item, boolean hiddenList)
 	{
-		final List<String> hiddenItemSet = new ArrayList<>(hiddenItemList);
-		final List<String> highlightedItemSet = new ArrayList<>(highlightedItemsList);
+		final List<String> hiddenItemSet = new ArrayList<>(Text.fromCSV(config.getHiddenItems()));
+		final List<String> highlightedItemSet = new ArrayList<>(Text.fromCSV(config.getHighlightItems()));
 
 		if (hiddenList)
 		{
@@ -558,20 +596,29 @@ public class GroundItemsPlugin extends Plugin
 		config.setHighlightedItem(Text.toCSV(highlightedItemSet));
 	}
 
-	Color getHighlighted(NamedQuantity item, int gePrice, int haPrice)
+	private Color getHighlighted(GroundItem groundItem)
 	{
-		if (TRUE.equals(highlightedItems.getUnchecked(item)))
+		Color itemColor = getItemColor(groundItem.getItemId());
+
+		final int hiddenOrHighlighted = isHiddenOrHighlighted(groundItem);
+		if (hiddenOrHighlighted == HIGHLIGHTED)
 		{
-			return config.highlightedColor();
+			return itemColor != null ? itemColor : config.highlightedColor();
 		}
 
 		// Explicit hide takes priority over implicit highlight
-		if (TRUE.equals(hiddenItems.getUnchecked(item)))
+		if (hiddenOrHighlighted == HIDDEN)
 		{
 			return null;
 		}
 
-		final int price = getValueByMode(gePrice, haPrice);
+		// item highlight colors takes priority over price thresholds
+		if (itemColor != null)
+		{
+			return itemColor;
+		}
+
+		final int price = getValueByMode(groundItem.getGePrice(), groundItem.getHaPrice());
 		for (PriceHighlight highlight : priceChecks)
 		{
 			if (price > highlight.getPrice())
@@ -583,30 +630,57 @@ public class GroundItemsPlugin extends Plugin
 		return null;
 	}
 
-	Color getHidden(NamedQuantity item, int gePrice, int haPrice, boolean isTradeable)
+	private boolean isHidden(GroundItem groundItem)
 	{
-		final boolean isExplicitHidden = TRUE.equals(hiddenItems.getUnchecked(item));
-		final boolean isExplicitHighlight = TRUE.equals(highlightedItems.getUnchecked(item));
-		final boolean canBeHidden = gePrice > 0 || isTradeable || !config.dontHideUntradeables();
-		final boolean underGe = gePrice < config.getHideUnderValue();
-		final boolean underHa = haPrice < config.getHideUnderValue();
+		final int hiddenOrHighlighted = isHiddenOrHighlighted(groundItem);
+		final boolean canBeHidden = groundItem.getGePrice() > 0 || groundItem.isTradeable() || !config.dontHideUntradeables();
+		final boolean underGe = groundItem.getGePrice() < config.getHideUnderValue();
+		final boolean underHa = groundItem.getHaPrice() < config.getHideUnderValue();
 
 		// Explicit highlight takes priority over implicit hide
-		return isExplicitHidden || (!isExplicitHighlight && canBeHidden && underGe && underHa)
-			? config.hiddenColor()
-			: null;
+		return hiddenOrHighlighted == HIDDEN || (hiddenOrHighlighted != HIGHLIGHTED && canBeHidden && underGe && underHa);
 	}
 
-	Color getItemColor(Color highlighted, Color hidden)
+	private static final int NONE = 0;
+	private static final int HIGHLIGHTED = 1;
+	private static final int HIDDEN = 2;
+
+	private int isHiddenOrHighlighted(GroundItem item)
+	{
+		int hl = highlightedItems.matches(item);
+		if (hl == ItemList.EXACT)
+		{
+			return HIGHLIGHTED;
+		}
+
+		int hi = hiddenItems.matches(item);
+		if (hi == ItemList.EXACT)
+		{
+			return HIDDEN;
+		}
+
+		if (hl == ItemList.WILDCARD)
+		{
+			return HIGHLIGHTED;
+		}
+		if (hi == ItemList.WILDCARD)
+		{
+			return HIDDEN;
+		}
+
+		return NONE;
+	}
+
+	private Color getItemColor(Color highlighted, boolean hidden)
 	{
 		if (highlighted != null)
 		{
 			return highlighted;
 		}
 
-		if (hidden != null)
+		if (hidden)
 		{
-			return hidden;
+			return config.hiddenColor();
 		}
 
 		return config.defaultColor();
@@ -623,12 +697,14 @@ public class GroundItemsPlugin extends Plugin
 
 	private void notifyHighlightedItem(GroundItem item)
 	{
+		final int hiddenOrHighlighted = isHiddenOrHighlighted(item);
+
 		final boolean shouldNotifyHighlighted = config.notifyHighlightedDrops() &&
-			TRUE.equals(highlightedItems.getUnchecked(new NamedQuantity(item)));
+			hiddenOrHighlighted == HIGHLIGHTED;
 
 		final boolean shouldNotifyTier = config.notifyTier() != HighlightTier.OFF &&
 			getValueByMode(item.getGePrice(), item.getHaPrice()) > config.notifyTier().getValueFromTier(config) &&
-			FALSE.equals(hiddenItems.getUnchecked(new NamedQuantity(item)));
+			hiddenOrHighlighted != HIDDEN;
 
 		final String dropType;
 		if (shouldNotifyHighlighted)
@@ -656,7 +732,7 @@ public class GroundItemsPlugin extends Plugin
 				.append(QuantityFormatter.quantityToStackSize(item.getQuantity()))
 				.append(')');
 		}
-		
+
 		notifier.notify(notificationStringBuilder.toString());
 	}
 
@@ -673,22 +749,6 @@ public class GroundItemsPlugin extends Plugin
 		}
 	}
 
-	@Subscribe
-	public void onMenuOptionClicked(MenuOptionClicked menuOptionClicked)
-	{
-		if (menuOptionClicked.isItemOp() && menuOptionClicked.getMenuOption().equals("Drop"))
-		{
-			int itemId = menuOptionClicked.getItemId();
-			// Keep a queue of recently dropped items to better detect
-			// item spawns that are drops
-			droppedItemQueue.add(itemId);
-		}
-		else if (menuOptionClicked.getMenuAction() == MenuAction.WIDGET_TARGET_ON_GAME_OBJECT && client.getSelectedWidget().getId() == WidgetInfo.INVENTORY.getId())
-		{
-			lastUsedItem = client.getSelectedWidget().getItemId();
-		}
-	}
-
 	private void handleLootbeam(WorldPoint worldPoint)
 	{
 		/*
@@ -701,11 +761,14 @@ public class GroundItemsPlugin extends Plugin
 			return;
 		}
 
-		int price = -1;
+		int highestPrice = -1;
+		GroundItem highestItem = null;
 		Collection<GroundItem> groundItems = collectedGroundItems.row(worldPoint).values();
+		final OwnershipFilterMode ownershipFilterMode = config.ownershipFilterMode();
+		final int accountType = client.getVarbitValue(VarbitID.IRONMAN);
 		for (GroundItem groundItem : groundItems)
 		{
-			if ((config.onlyShowLoot() && !groundItem.isMine()))
+			if (!shouldDisplayItem(ownershipFilterMode, groundItem.getOwnership(), accountType))
 			{
 				continue;
 			}
@@ -714,31 +777,38 @@ public class GroundItemsPlugin extends Plugin
 			 * highlighted items have the highest priority so if an item is highlighted at this location
 			 * we can early return
 			 */
-			NamedQuantity item = new NamedQuantity(groundItem);
+			int hiddenOrHighlight = isHiddenOrHighlighted(groundItem);
 			if (config.showLootbeamForHighlighted()
-				&& TRUE.equals(highlightedItems.getUnchecked(item)))
+				&& hiddenOrHighlight == HIGHLIGHTED)
 			{
-				addLootbeam(worldPoint, config.highlightedColor());
+				addLootbeam(worldPoint,
+					MoreObjects.firstNonNull(getItemColor(groundItem.getItemId()), config.highlightedColor()));
 				return;
 			}
 
 			// Explicit hide takes priority over implicit highlight
-			if (TRUE.equals(hiddenItems.getUnchecked(item)))
+			if (hiddenOrHighlight == HIDDEN)
 			{
 				continue;
 			}
 
 			int itemPrice = getValueByMode(groundItem.getGePrice(), groundItem.getHaPrice());
-			price = Math.max(itemPrice, price);
+			if (itemPrice > highestPrice)
+			{
+				highestPrice = itemPrice;
+				highestItem = groundItem;
+			}
 		}
 
-		if (config.showLootbeamTier() != HighlightTier.OFF)
+		if (highestItem != null && config.showLootbeamTier() != HighlightTier.OFF)
 		{
 			for (PriceHighlight highlight : priceChecks)
 			{
-				if (price > highlight.getPrice() && price > config.showLootbeamTier().getValueFromTier(config))
+				if (highestPrice > highlight.getPrice() && highestPrice > config.showLootbeamTier().getValueFromTier(config))
 				{
-					addLootbeam(worldPoint, highlight.color);
+					// use color from the most expensive item
+					addLootbeam(worldPoint,
+						MoreObjects.firstNonNull(getItemColor(highestItem.getItemId()), highlight.color));
 					return;
 				}
 			}
@@ -786,6 +856,39 @@ public class GroundItemsPlugin extends Plugin
 		if (lootbeam != null)
 		{
 			lootbeam.remove();
+		}
+	}
+
+	Color getItemColor(int itemId)
+	{
+		return configManager.getConfiguration(GroundItemsConfig.GROUP, HIGHLIGHT_COLOR_PREFIX + itemId, Color.class);
+	}
+
+	void setItemColor(int itemId, Color color)
+	{
+		configManager.setConfiguration(GroundItemsConfig.GROUP, HIGHLIGHT_COLOR_PREFIX + itemId, color);
+	}
+
+	void unsetItemColor(int itemId)
+	{
+		configManager.unsetConfiguration(GroundItemsConfig.GROUP, HIGHLIGHT_COLOR_PREFIX + itemId);
+	}
+
+	/*
+	 * All      -> none | self | other | group
+	 * Drops    -> self | group
+	 * Takeable -> none | self | group | (if a main then other)
+	 */
+	boolean shouldDisplayItem(OwnershipFilterMode filterMode, int ownership, int accountType)
+	{
+		switch (filterMode)
+		{
+			case DROPS:
+				return ownership == OWNERSHIP_SELF || ownership == OWNERSHIP_GROUP;
+			case TAKEABLE:
+				return ownership != OWNERSHIP_OTHER || accountType == 0; // Mains can always take items
+			default:
+				return true;
 		}
 	}
 }

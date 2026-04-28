@@ -24,6 +24,7 @@
  */
 package net.runelite.client.plugins.playerindicators;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.Provides;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -48,8 +49,8 @@ import net.runelite.api.Player;
 import net.runelite.api.ScriptID;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.ScriptPostFired;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -204,23 +205,7 @@ public class PlayerIndicatorsPlugin extends Plugin
 				|| type == PLAYER_EIGHTH_OPTION
 				|| type == RUNELITE_PLAYER)
 			{
-				Player[] players = client.getCachedPlayers();
-				Player player = null;
-
-				int identifier = entry.getIdentifier();
-
-				// 'Walk here' identifiers are offset by 1 because the default
-				// identifier for this option is 0, which is also a player index.
-				if (type == WALK)
-				{
-					identifier--;
-				}
-
-				if (identifier >= 0 && identifier < players.length)
-				{
-					player = players[identifier];
-				}
-
+				Player player = entry.getPlayer();
 				if (player == null)
 				{
 					continue;
@@ -240,20 +225,27 @@ public class PlayerIndicatorsPlugin extends Plugin
 		}
 	}
 
-	private String decorateTarget(String oldTarget, PlayerIndicatorsService.Decorations decorations)
+	@VisibleForTesting
+	String decorateTarget(String oldTarget, PlayerIndicatorsService.Decorations decorations)
 	{
 		String newTarget = oldTarget;
 
 		if (decorations.getColor() != null && config.colorPlayerMenu())
 		{
-			// strip out existing <col...
-			int idx = oldTarget.indexOf('>');
+			String prefix = "";
+			int idx = oldTarget.indexOf("->");
 			if (idx != -1)
 			{
-				newTarget = oldTarget.substring(idx + 1);
+				prefix = oldTarget.substring(0, idx + 3); // <col=ff9040>Earth rune</col><col=ff> ->
+				oldTarget = oldTarget.substring(idx + 3);
 			}
 
-			newTarget = ColorUtil.prependColorTag(newTarget, decorations.getColor());
+			// <col=ff0000>title0RuneLitetitle1<col=ff>  (level-126)title2
+			idx = oldTarget.indexOf('>');
+			// remove leading <col>
+			oldTarget = oldTarget.substring(idx + 1);
+
+			newTarget = prefix + ColorUtil.prependColorTag(oldTarget, decorations.getColor());
 		}
 
 		FriendsChatRank rank = decorations.getFriendsChatRank();
@@ -282,7 +274,7 @@ public class PlayerIndicatorsPlugin extends Plugin
 		{
 			clientThread.invokeLater(() ->
 			{
-				Widget tradeTitle = client.getWidget(WidgetInfo.TRADE_WINDOW_HEADER);
+				Widget tradeTitle = client.getWidget(InterfaceID.Trademain.TITLE);
 				String header = tradeTitle.getText();
 				String playerName = header.substring(TRADING_WITH_TEXT.length());
 

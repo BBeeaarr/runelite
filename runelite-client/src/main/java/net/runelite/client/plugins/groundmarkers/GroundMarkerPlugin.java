@@ -26,9 +26,13 @@
 package net.runelite.client.plugins.groundmarkers;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ListMultimap;
+import com.google.common.util.concurrent.Runnables;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -36,18 +40,22 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.api.GameState;
 import net.runelite.api.KeyCode;
+import net.runelite.api.Menu;
 import net.runelite.api.MenuAction;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.Tile;
-import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.WorldEntity;
+import net.runelite.api.WorldView;
 import net.runelite.api.coords.WorldPoint;
-import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.events.WorldViewLoaded;
+import net.runelite.api.events.WorldViewUnloaded;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
@@ -56,7 +64,10 @@ import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.components.colorpicker.ColorPickerManager;
+import net.runelite.client.ui.components.colorpicker.RuneliteColorPicker;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.ColorUtil;
 
 @Slf4j
 @PluginDescriptor(
@@ -67,14 +78,10 @@ import net.runelite.client.ui.overlay.OverlayManager;
 public class GroundMarkerPlugin extends Plugin
 {
 	private static final String CONFIG_GROUP = "groundMarker";
-	private static final String MARK = "Mark tile";
-	private static final String UNMARK = "Unmark tile";
-	private static final String LABEL = "Label tile";
-	private static final String WALK_HERE = "Walk here";
 	private static final String REGION_PREFIX = "region_";
 
 	@Getter(AccessLevel.PACKAGE)
-	private final List<ColorTileMarker> points = new ArrayList<>();
+	private final ListMultimap<WorldView, ColorTileMarker> points = ArrayListMultimap.create();
 
 	@Inject
 	private Client client;
@@ -105,6 +112,9 @@ public class GroundMarkerPlugin extends Plugin
 
 	@Inject
 	private Gson gson;
+
+	@Inject
+	private ColorPickerManager colorPickerManager;
 
 	void savePoints(int regionId, Collection<GroundMarkerPoint> points)
 	{
@@ -141,8 +151,25 @@ public class GroundMarkerPlugin extends Plugin
 	{
 		points.clear();
 
-		int[] regions = client.getMapRegions();
+		WorldView wv = client.getTopLevelWorldView();
+		if (wv == null)
+		{
+			return;
+		}
 
+		loadPoints(wv);
+
+		for (WorldEntity we : wv.worldEntities())
+		{
+			loadPoints(we.getWorldView());
+		}
+	}
+
+	void loadPoints(WorldView wv)
+	{
+		points.removeAll(wv);
+
+		int[] regions = wv.getMapRegions();
 		if (regions == null)
 		{
 			return;
@@ -153,8 +180,8 @@ public class GroundMarkerPlugin extends Plugin
 			// load points for region
 			log.debug("Loading points for region {}", regionId);
 			Collection<GroundMarkerPoint> regionPoints = getPoints(regionId);
-			Collection<ColorTileMarker> colorTileMarkers = translateToColorTileMarker(regionPoints);
-			points.addAll(colorTileMarkers);
+			Collection<ColorTileMarker> colorTileMarkers = translateToColorTileMarker(wv, regionPoints);
+			points.putAll(wv, colorTileMarkers);
 		}
 	}
 
@@ -165,7 +192,7 @@ public class GroundMarkerPlugin extends Plugin
 	 * @return A collection of color tile markers, converted from the passed ground marker points, accounting for local
 	 *         instance points. See {@link WorldPoint#toLocalInstance(Client, WorldPoint)}
 	 */
-	private Collection<ColorTileMarker> translateToColorTileMarker(Collection<GroundMarkerPoint> points)
+	private Collection<ColorTileMarker> translateToColorTileMarker(WorldView wv, Collection<GroundMarkerPoint> points)
 	{
 		if (points.isEmpty())
 		{
@@ -178,7 +205,7 @@ public class GroundMarkerPlugin extends Plugin
 				point.getColor(), point.getLabel()))
 			.flatMap(colorTile ->
 			{
-				final Collection<WorldPoint> localWorldPoints = WorldPoint.toLocalInstance(client, colorTile.getWorldPoint());
+				final Collection<WorldPoint> localWorldPoints = WorldPoint.toLocalInstance(wv, colorTile.getWorldPoint());
 				return localWorldPoints.stream().map(wp -> new ColorTileMarker(wp, colorTile.getColor(), colorTile.getLabel()));
 			})
 			.collect(Collectors.toList());
@@ -215,25 +242,32 @@ public class GroundMarkerPlugin extends Plugin
 	}
 
 	@Subscribe
-	public void onGameStateChanged(GameStateChanged gameStateChanged)
+	public void onWorldViewLoaded(WorldViewLoaded event)
 	{
-		if (gameStateChanged.getGameState() != GameState.LOGGED_IN)
-		{
-			return;
-		}
+		loadPoints(event.getWorldView());
+	}
 
-		// map region has just been updated
-		loadPoints();
+	@Subscribe
+	public void onWorldViewUnloaded(WorldViewUnloaded event)
+	{
+		points.removeAll(event.getWorldView());
 	}
 
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
 	{
+		MenuAction menuAction = event.getMenuEntry().getType();
 		final boolean hotKeyPressed = client.isKeyPressed(KeyCode.KC_SHIFT);
-		if (hotKeyPressed && event.getOption().equals(WALK_HERE))
+		if (hotKeyPressed && (menuAction == MenuAction.WALK || menuAction == MenuAction.SET_HEADING))
 		{
-			final Tile selectedSceneTile = client.getSelectedSceneTile();
+			int worldId = event.getMenuEntry().getWorldViewId();
+			WorldView wv = client.getWorldView(worldId);
+			if (wv == null)
+			{
+				return;
+			}
 
+			final Tile selectedSceneTile = wv.getSelectedSceneTile();
 			if (selectedSceneTile == null)
 			{
 				return;
@@ -241,36 +275,82 @@ public class GroundMarkerPlugin extends Plugin
 
 			final WorldPoint worldPoint = WorldPoint.fromLocalInstance(client, selectedSceneTile.getLocalLocation());
 			final int regionId = worldPoint.getRegionID();
-			final GroundMarkerPoint point = new GroundMarkerPoint(regionId, worldPoint.getRegionX(), worldPoint.getRegionY(), worldPoint.getPlane(), null, null);
-			final boolean exists = getPoints(regionId).contains(point);
+			var regionPoints = getPoints(regionId);
+			var existingOpt = regionPoints.stream()
+				.filter(p -> p.getRegionX() == worldPoint.getRegionX() && p.getRegionY() == worldPoint.getRegionY() && p.getZ() == worldPoint.getPlane())
+				.findFirst();
 
 			client.createMenuEntry(-1)
-				.setOption(exists ? UNMARK : MARK)
-				.setTarget(event.getTarget())
+				.setOption(existingOpt.isPresent() ? "Unmark" : "Mark")
+				.setTarget("Tile")
 				.setType(MenuAction.RUNELITE)
 				.onClick(e ->
-				{
-					Tile target = client.getSelectedSceneTile();
-					if (target != null)
-					{
-						markTile(target.getLocalLocation());
-					}
-				});
+					markTile(worldPoint));
 
-			if (exists)
+			if (existingOpt.isPresent())
 			{
+				var existing = existingOpt.get();
+
 				client.createMenuEntry(-2)
-					.setOption(LABEL)
-					.setTarget(event.getTarget())
+					.setOption("Label")
+					.setTarget("Tile")
+					.setType(MenuAction.RUNELITE)
+					.onClick(e -> labelTile(existing));
+
+				MenuEntry menuColor = client.createMenuEntry(-3)
+					.setOption("Color")
+					.setTarget("Tile")
+					.setType(MenuAction.RUNELITE);
+				Menu submenu = menuColor.createSubMenu();
+
+				if (regionPoints.size() > 1)
+				{
+					submenu.createMenuEntry(-1)
+						.setOption("Reset all")
+						.setType(MenuAction.RUNELITE)
+						.onClick(e ->
+							chatboxPanelManager.openTextMenuInput("Are you sure you want to reset the color of " + regionPoints.size() + " tiles?")
+								.option("Yes", () ->
+								{
+									var newPoints = regionPoints.stream()
+										.map(p -> new GroundMarkerPoint(p.getRegionId(), p.getRegionX(), p.getRegionY(), p.getZ(), config.markerColor(), p.getLabel()))
+										.collect(Collectors.toList());
+									savePoints(regionId, newPoints);
+									loadPoints();
+								})
+								.option("No", Runnables.doNothing())
+								.build());
+				}
+
+				submenu.createMenuEntry(-1)
+					.setOption("Pick")
 					.setType(MenuAction.RUNELITE)
 					.onClick(e ->
 					{
-						Tile target = client.getSelectedSceneTile();
-						if (target != null)
+						Color color = existing.getColor();
+						SwingUtilities.invokeLater(() ->
 						{
-							labelTile(target);
-						}
+							RuneliteColorPicker colorPicker = colorPickerManager.create(client,
+								color, "Tile marker color", false);
+							colorPicker.setOnClose(c -> colorTile(existing, c));
+							colorPicker.setVisible(true);
+						});
 					});
+
+				var existingColors = points.values().stream()
+					.map(ColorTileMarker::getColor)
+					.distinct()
+					.collect(Collectors.toList());
+				for (Color color : existingColors)
+				{
+					if (!color.equals(existing.getColor()))
+					{
+						submenu.createMenuEntry(-1)
+							.setOption(ColorUtil.prependColorTag("Color", color))
+							.setType(MenuAction.RUNELITE)
+							.onClick(e -> colorTile(existing, color));
+					}
+				}
 			}
 		}
 	}
@@ -291,15 +371,8 @@ public class GroundMarkerPlugin extends Plugin
 		}
 	}
 
-	private void markTile(LocalPoint localPoint)
+	private void markTile(WorldPoint worldPoint)
 	{
-		if (localPoint == null)
-		{
-			return;
-		}
-
-		WorldPoint worldPoint = WorldPoint.fromLocalInstance(client, localPoint);
-
 		int regionId = worldPoint.getRegionID();
 		GroundMarkerPoint point = new GroundMarkerPoint(regionId, worldPoint.getRegionX(), worldPoint.getRegionY(), worldPoint.getPlane(), config.markerColor(), null);
 		log.debug("Updating point: {} - {}", point, worldPoint);
@@ -319,35 +392,33 @@ public class GroundMarkerPlugin extends Plugin
 		loadPoints();
 	}
 
-	private void labelTile(Tile tile)
+	private void labelTile(GroundMarkerPoint existing)
 	{
-		LocalPoint localPoint = tile.getLocalLocation();
-		WorldPoint worldPoint = WorldPoint.fromLocalInstance(client, localPoint);
-		final int regionId = worldPoint.getRegionID();
-
-		GroundMarkerPoint searchPoint = new GroundMarkerPoint(regionId, worldPoint.getRegionX(), worldPoint.getRegionY(), worldPoint.getPlane(), null, null);
-		Collection<GroundMarkerPoint> points = getPoints(regionId);
-		GroundMarkerPoint existing = points.stream()
-			.filter(p -> p.equals(searchPoint))
-			.findFirst().orElse(null);
-		if (existing == null)
-		{
-			return;
-		}
-
 		chatboxPanelManager.openTextInput("Tile label")
 			.value(Optional.ofNullable(existing.getLabel()).orElse(""))
 			.onDone((input) ->
 			{
 				input = Strings.emptyToNull(input);
 
-				GroundMarkerPoint newPoint = new GroundMarkerPoint(regionId, worldPoint.getRegionX(), worldPoint.getRegionY(), worldPoint.getPlane(), existing.getColor(), input);
-				points.remove(searchPoint);
+				var newPoint = new GroundMarkerPoint(existing.getRegionId(), existing.getRegionX(), existing.getRegionY(), existing.getZ(), existing.getColor(), input);
+				Collection<GroundMarkerPoint> points = new ArrayList<>(getPoints(existing.getRegionId()));
+				points.remove(existing);
 				points.add(newPoint);
-				savePoints(regionId, points);
+				savePoints(existing.getRegionId(), points);
 
 				loadPoints();
 			})
 			.build();
+	}
+
+	private void colorTile(GroundMarkerPoint existing, Color newColor)
+	{
+		var newPoint = new GroundMarkerPoint(existing.getRegionId(), existing.getRegionX(), existing.getRegionY(), existing.getZ(), newColor, existing.getLabel());
+		Collection<GroundMarkerPoint> points = new ArrayList<>(getPoints(existing.getRegionId()));
+		points.remove(newPoint);
+		points.add(newPoint);
+		savePoints(existing.getRegionId(), points);
+
+		loadPoints();
 	}
 }

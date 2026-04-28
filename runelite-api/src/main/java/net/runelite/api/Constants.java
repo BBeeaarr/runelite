@@ -73,6 +73,12 @@ public class Constants
 	public static final int SCENE_SIZE = 104;
 
 	/**
+	 * Size of the extended scene. To compute the offset to convert from scene coordinate to
+	 * extended scene coordinate, use (EXTENDED_SCENE_SIZE-SCENE_SIZE)/2.
+	 */
+	public static final int EXTENDED_SCENE_SIZE = 184;
+
+	/**
 	 * The max allowed plane by the game.
 	 * <p>
 	 * This value is exclusive. The plane is set by 2 bits which restricts
@@ -82,6 +88,7 @@ public class Constants
 
 	public static final int TILE_FLAG_BRIDGE = 2;
 	public static final int TILE_FLAG_UNDER_ROOF = 4;
+	public static final int TILE_FLAG_VIS_BELOW = 8;
 
 	/**
 	 * Flag for roof removal to remove the roofs above the player's current position.
@@ -140,4 +147,8 @@ public class Constants
 	 * @see ItemComposition#getPrice
 	 */
 	public static final float HIGH_ALCHEMY_MULTIPLIER = .6f;
+
+	public static final int CLICK_ACTION_NONE = 0;
+	public static final int CLICK_ACTION_WALK = 1;
+	public static final int CLICK_ACTION_SET_HEADING = 2;
 }

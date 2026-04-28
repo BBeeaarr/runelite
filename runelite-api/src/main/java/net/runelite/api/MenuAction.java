@@ -170,6 +170,7 @@ public enum MenuAction
 	/**
 	 * Menu action when using a component on an item
 	 */
+	@Deprecated
 	WIDGET_USE_ON_ITEM(32),
 
 	/**
@@ -243,6 +244,20 @@ public enum MenuAction
 	 */
 	WIDGET_TARGET_ON_WIDGET(58),
 
+	SET_HEADING(60),
+
+	WORLD_ENTITY_FIRST_OPTION(63),
+	WORLD_ENTITY_SECOND_OPTION(64),
+	WORLD_ENTITY_THIRD_OPTION(65),
+	WORLD_ENTITY_FOURTH_OPTION(66),
+	WORLD_ENTITY_FIFTH_OPTION(67),
+
+	/**
+	 * RuneLite menu that is a widge.
+	 * @see MenuEntry#getWidget()
+	 */
+	RUNELITE_WIDGET(998),
+
 	/**
 	 * Menu action for high priority runelite options
 	 */
@@ -274,6 +289,8 @@ public enum MenuAction
 	 */
 	CC_OP_LOW_PRIORITY(1007),
 
+	EXAMINE_WORLD_ENTITY(1013),
+
 	/**
 	 * Menu action injected by runelite for its menu items.
 	 */
@@ -296,9 +313,9 @@ public enum MenuAction
 	 */
 	RUNELITE_INFOBOX(1504),
 	/**
-	 * Parent menu of submenus
+	 * Like {@link #RUNELITE}, except clicking always forces the menu open.
 	 */
-	RUNELITE_SUBMENU(1505),
+	RUNELITE_LOW_PRIORITY(1506),
 
 	/**
 	 * Menu action triggered when the id is not defined in this class.

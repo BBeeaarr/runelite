@@ -53,7 +53,7 @@ import okhttp3.Response;
 @PluginDescriptor(
 	name = "XP Updater",
 	description = "Automatically updates your stats on external xptrackers when you log out",
-	tags = {"cml", "crystalmathlabs", "templeosrs", "temple", "wom", "wiseoldman", "wise old man", "external", "integration"},
+	tags = {"cml", "crystalmathlabs", "runetracker", "templeosrs", "temple", "wom", "wiseoldman", "wise old man", "external", "integration"},
 	enabledByDefault = false
 )
 @Slf4j
@@ -74,6 +74,7 @@ public class XpUpdaterPlugin extends Plugin
 	private OkHttpClient okHttpClient;
 
 	private long lastAccount;
+	private String lastDisplayName;
 	private boolean fetchXp;
 	private long lastXp;
 
@@ -102,20 +103,14 @@ public class XpUpdaterPlugin extends Plugin
 				fetchXp = true;
 			}
 		}
-		else if (state == GameState.LOGIN_SCREEN)
+		else if (state == GameState.LOGIN_SCREEN || state == GameState.HOPPING)
 		{
-			Player local = client.getLocalPlayer();
-			if (local == null)
-			{
-				return;
-			}
-
 			long totalXp = client.getOverallExperience();
 			// Don't submit update unless xp threshold is reached
-			if (Math.abs(totalXp - lastXp) > XP_THRESHOLD)
+			if (lastDisplayName != null && Math.abs(totalXp - lastXp) > XP_THRESHOLD)
 			{
-				log.debug("Submitting update for {} accountHash {}", local.getName(), lastAccount);
-				update(lastAccount, local.getName());
+				log.debug("Submitting update for {} accountHash {}", lastDisplayName, lastAccount);
+				update(lastAccount, lastDisplayName);
 				lastXp = totalXp;
 			}
 		}
@@ -127,6 +122,11 @@ public class XpUpdaterPlugin extends Plugin
 		if (fetchXp)
 		{
 			lastXp = client.getOverallExperience();
+			Player local = client.getLocalPlayer();
+			if (local != null)
+			{
+				lastDisplayName = local.getName();
+			}
 			fetchXp = false;
 		}
 	}
@@ -146,7 +146,8 @@ public class XpUpdaterPlugin extends Plugin
 			&& !worldTypes.contains(WorldType.SEASONAL)
 			&& !worldTypes.contains(WorldType.DEADMAN)
 			&& !worldTypes.contains(WorldType.NOSAVE_MODE)
-			&& !worldTypes.contains(WorldType.FRESH_START_WORLD))
+			&& !worldTypes.contains(WorldType.FRESH_START_WORLD)
+			&& !worldTypes.contains(WorldType.TOURNAMENT_WORLD))
 		{
 			HttpUrl url = new HttpUrl.Builder()
 				.scheme("https")
@@ -171,7 +172,8 @@ public class XpUpdaterPlugin extends Plugin
 		if (config.templeosrs()
 			&& !worldTypes.contains(WorldType.SEASONAL)
 			&& !worldTypes.contains(WorldType.DEADMAN)
-			&& !worldTypes.contains(WorldType.NOSAVE_MODE))
+			&& !worldTypes.contains(WorldType.NOSAVE_MODE)
+			&& !worldTypes.contains(WorldType.TOURNAMENT_WORLD))
 		{
 			HttpUrl.Builder url = new HttpUrl.Builder()
 				.scheme("https")
@@ -199,14 +201,13 @@ public class XpUpdaterPlugin extends Plugin
 	{
 		if (config.wiseoldman()
 			&& !worldTypes.contains(WorldType.DEADMAN)
-			&& !worldTypes.contains(WorldType.NOSAVE_MODE))
+			&& !worldTypes.contains(WorldType.NOSAVE_MODE)
+			&& !worldTypes.contains(WorldType.TOURNAMENT_WORLD))
 		{
 			HttpUrl url = new HttpUrl.Builder()
 				.scheme("https")
-				.host(
-					worldTypes.contains(WorldType.SEASONAL) ? "seasonal.api.wiseoldman.net" :
-						"api.wiseoldman.net")
-				.addPathSegment("v2")
+				.host("api.wiseoldman.net")
+				.addPathSegment(worldTypes.contains(WorldType.SEASONAL) ? "league" : "v2")
 				.addPathSegment("players")
 				.addPathSegment(username)
 				.build();

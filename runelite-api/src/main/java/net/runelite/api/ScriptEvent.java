@@ -24,6 +24,7 @@
  */
 package net.runelite.api;
 
+import javax.annotation.Nullable;
 import net.runelite.api.widgets.Widget;
 
 public interface ScriptEvent
@@ -46,12 +47,12 @@ public interface ScriptEvent
 	Widget getSource();
 
 	/**
-	 * Sets the widget the {@link #WIDGET_ID} and {@link #WIDGET_INDEX} args
-	 * are substituted with. This is useful for running widget listeners
-	 *
-	 * @see Widget#getOnLoadListener()
+	 * Gets the {@link Widget} target. This is only used for the drag complete listener
+	 * @see Widget#setOnDragCompleteListener(Object...)
+	 * @return
 	 */
-	ScriptEvent setSource(Widget widget);
+	@Nullable
+	Widget getTarget();
 
 	/**
 	 * Arguments passed to the script. Index 0 is the script being run and is not an argument.
@@ -60,9 +61,9 @@ public interface ScriptEvent
 	Object[] getArguments();
 
 	/**
-	 * Gets the menu index of the event
+	 * Gets the menu op of the event
 	 *
-	 * @return the index
+	 * @return the menu op
 	 */
 	int getOp();
 

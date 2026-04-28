@@ -27,6 +27,7 @@ package net.runelite.cache.definitions;
 
 import java.util.Map;
 import lombok.Data;
+import net.runelite.cache.EntityOpsDefinition;
 
 @Data
 public class ObjectDefinition
@@ -43,8 +44,9 @@ public class ObjectDefinition
 	private short[] textureToReplace;
 	private int sizeX = 1;
 	private int sizeY = 1;
-	private int anInt2083 = 0;
+	private int ambientSoundDistance = 0;
 	private int[] ambientSoundIds;
+	private int ambientSoundRetain;
 	private int offsetX = 0;
 	private boolean mergeNormals = false;
 	private int wallOrDoor = -1;
@@ -52,7 +54,7 @@ public class ObjectDefinition
 	private int varbitID = -1;
 	private int ambient = 0;
 	private int contrast = 0;
-	private String[] actions = new String[5];
+	private EntityOpsDefinition ops = new EntityOpsDefinition();
 	private int interactType = 2;
 	private int mapSceneID = -1;
 	private int blockingMask = 0;
@@ -67,15 +69,24 @@ public class ObjectDefinition
 	private boolean obstructsGround = false;
 	private int contouredGround = -1;
 	private int supportsItems = -1;
+	private int raise;
 	private int[] configChangeDest;
 	private int category;
 	private boolean isRotated = false;
 	private int varpID = -1;
 	private int ambientSoundId = -1;
-	private boolean aBool2111 = false;
-	private int anInt2112 = 0;
-	private int anInt2113 = 0;
+	private boolean modelClipped = false;
+	private int soundDistanceFadeCurve;
+	private int soundFadeInDuration = 300;
+	private int soundFadeOutDuration = 300;
+	private int soundFadeInCurve;
+	private int soundFadeOutCurve;
+	private int soundVisibility = 2;
+	private int ambientSoundChangeTicksMin = 0;
+	private int ambientSoundChangeTicksMax = 0;
 	private boolean blocksProjectile = true;
 	private boolean randomizeAnimStart;
+	private boolean deferAnimChange;
+	private boolean unknown1 = false;
 	private Map<Integer, Object> params = null;
 }

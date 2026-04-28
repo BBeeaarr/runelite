@@ -108,6 +108,7 @@ public class WorldMapPlugin extends Plugin
 	static final String CONFIG_KEY_FISHING_SPOT_TOOLTIPS = "fishingSpotTooltips";
 	static final String CONFIG_KEY_MOORING_LOCATION_TOOLTIPS = "mooringLocationTooltips";
 	static final String CONFIG_KEY_MOORING_LOCATION_LEVEL_ICON = "mooringLocationShortcutIcon";
+	static final String CONFIG_KEY_HIDE_COMPLETED_QUEST_ICONS = "hideCompletedQuestIcons";
 
 	static
 	{

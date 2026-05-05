@@ -42,6 +42,7 @@ import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatColorType;
 import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
@@ -78,6 +79,9 @@ public class KingdomPlugin extends Plugin
 
 	@Inject
 	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
 
 	@Inject
 	private InfoBoxManager infoBoxManager;
@@ -124,6 +128,8 @@ public class KingdomPlugin extends Plugin
 				setCoffer(coffer);
 				setApproval(approval);
 			}
+			//re-renders infobox if it was missing
+			processInfobox();
 		}
 		else if (event.getVarpId() == VarPlayerID.MISC_QUEST)
 		{
@@ -136,7 +142,15 @@ public class KingdomPlugin extends Plugin
 	{
 		if (event.getGameState() == GameState.LOGGED_IN)
 		{
-			processInfobox();
+			clientThread.invokeLater(() ->
+			{
+				if (client.getLocalPlayer() != null)
+				{
+					processInfobox();
+					return true;
+				}
+				return false;
+			});
 		}
 		else if (event.getGameState() == GameState.LOGGING_IN)
 		{
